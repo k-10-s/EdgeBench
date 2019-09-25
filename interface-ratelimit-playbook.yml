@@ -1,0 +1,38 @@
+#########################################
+############Experiment 1#################
+
+- name: Interface Rate Limit
+  connection: ssh
+  gather_facts: false
+  hosts: all
+  vars:
+        packet_size_max: "64"
+        packet_size_min: "64"
+        packet_size: "512"
+        num_packets: "5000000"
+        capture_interface: "eth0"
+       #ansible_become_password: !vault |
+            #  $ANSIBLE_VAULT;1.1;AES256
+          #fix for repo
+  tasks:
+  - name: Gather pre drop count
+    shell: cat /sys/class/net/{{ capture_interface }}/statistics/rx_missed_errors
+    register: pre
+   
+  - name: Reset test rx interface
+    shell:  ifconfig {{ capture_interface }} down && ifconfig {{ capture_interface }} up
+    become: yes
+   
+  - name: Generate traffic
+    local_action: 
+        module: shell sudo pkt-gen -i eth1 -f tx -n {{ num_packets }} -l {{ packet_size }} -w 8 -zZ
+     
+  - name: Gather post drop count result
+    shell: cat /sys/class/net/{{ capture_interface }}/statistics/rx_missed_errors
+    register: post
+    
+  - name: store result locally
+    local_action: shell echo "{{ packet_size|int, num_packets|int, post.stdout|int - pre.stdout|int }}" >> ratelimit_result
+
+  - debug: 
+        msg: "Size: {{ packet_size }} -- Drop count before test {{ pre.stdout|int }} and after test {{ post.stdout|int }} (diff {{ post.stdout|int - pre.stdout|int }})"

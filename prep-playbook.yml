@@ -1,0 +1,56 @@
+############Setup pre-reqs#############
+
+- name: Setup Experiment
+  connection: ssh
+  gather_facts: true
+  hosts: all
+        
+  tasks:
+  - name: Set authorized key taken from file
+    authorized_key:
+        user: kyle
+        state: present
+        key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+  
+  - debug:
+        var: ansible_facts
+    
+  - debug:
+        var: ansible_facts['eth4']['features']['generic_segmentation_offload']
+#https://docs.ansible.com/ansible/latest/user_guide/playbooks_variables.html#variables-discovered-from-systems-facts
+  
+  
+  
+
+# - name: simulate long running op (15 sec), wait for up to 45 sec, poll every 5 sec
+ #   command: /bin/sleep 1
+ #   async: 45
+ #   poll: 1
+ 
+###Optimizations......        
+#(on sender/generator) disable auto-neg & flow control       
+            
+# ethtool -K eth0 gso off gro off lro off
+# ethtool -K eth0 rx off
+# ethtool -G eth0 rx 4096
+# ifconfig eth0 promisc
+# checksum importance 
+#irqbalance??
+#/sys/devices/1003000.pcie/pci0000:00/0000:00:01.0/0000:01:00.0/net/eth0/queues/rx-0\: echo e > rps_cpus
+#echo 32768 > /proc/sys/net/core/rps_sock_flow_entries
+#echo 32768 > /sys/class/net/eth0/queues/rx-0/rps_flow_cnt
+#http://christophe.vandeplas.com/2013/11/suricata-capturekerneldrops-caused-by.html
+
+
+# sudo sysctl -w net.core.netdev_max_backlog=3000
+#dd if=/dev/zero of=/media/root/ext/ddfile bs=1G count=1 oflag=direct
+#tcpdump varibale buffer size
+
+
+#apt install libyaml-dev libpcap-dev python-yaml libcap-ng-dev libmagic-dev liblz4-dev libjansson-dev cargo bc
+#./configure --prefix=/usr/ --sysconfdir=/etc/ --localstatedir=/var/
+
+
+
+
+
