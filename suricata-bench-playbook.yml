@@ -3,7 +3,7 @@
 
 
 ##TODO:
-##Build / run "configure" playbook to install suricata and deps, 
+##Build / run "configure" playbook to install suricata and deps,
 ##Build playbook to setup generator deivce and setup capture device interfaces
 ##Upload proper suricata config .yaml to capture devices
 ##Break generator device out from "local" actions
@@ -16,62 +16,80 @@
   hosts: all
   vars:
         num_packets: "3310426" #Dataset Pcap has this many packets
-        pps_limit: "100000" #Default, override with "-e" 
+        pps_limit: "100000" #Default, override with "-e"
         send_interface: "eth1"
-        capture_interface: "eth0"
-       #ansible_become_password: !vault |
-         #  $ANSIBLE_VAULT;1.1;AES256
-          #fix for repo
-        
+
+
+
+
   tasks:
+  - name: Copy Performance Monitor
+    copy:
+      src: gather_stats.bash
+      dest: /experiment/gather_stats.bash
+      mode: '0644'
+
+  - name: Copy Latest suricata.yaml Configs
+    copy:
+      src: suricata.yaml
+      dest: /experiment/suricata.yaml
+      mode: '0644'
+
   - name: Gather pre drop count
     shell: cat /sys/class/net/{{ capture_interface }}/statistics/rx_missed_errors
     register: pre
-    
+
   - name: Begin Suricata
-    shell: suricata -c /experiment/suricata.yaml -i {{ capture_interface }} --pidfile /experiment/pid 
+    shell: suricata -c /experiment/suricata.yaml -i {{ capture_interface }} --pidfile /experiment/pid
     register: suricata_async
     become: yes
     poll: 0
     async: 360
-    
+
   - name: Wait for Warmup
     command: /bin/sleep 20
     async: 45
     poll: 5
-    
+
+
   - name: Launch Performance Monitor
-    shell: bash /experiment/gather_stats.bash {{ pps_limit }} $(cat /experiment/pid) {{ capture_interface }} 
+    shell: bash /experiment/gather_stats.bash {{ pps_limit }} $(cat /experiment/pid) {{ capture_interface }} 0.5
     poll: 0
     async: 360
     become: yes
-    
+
   - name: Send traffic via tcpreplay
-    local_action: 
-        module: shell sudo tcpreplay -i {{ send_interface }} --netmap -p {{ pps_limit }} -K ~/cic-ids/useme_capWIN-J6GMIG1DQE5-172.31.67.62_iwasfixed 2> local_result.txt
-        
+    local_action:
+        module: shell sudo tcpreplay -i {{ send_interface }} --netmap -p {{ pps_limit }} -K ~/cic-ids/useme_capWIN-J6GMIG1DQE5-172.31.67.62_iwasfixed
+
   - name: Stop Everything
     shell: kill "$(cat /experiment/pid)"; kill "$(cat /experiment/perfpid)"
-    become: yes    
-  
+    become: yes
+
   - name: Wait for Cooldown
     async_status: jid="{{ suricata_async.ansible_job_id }}"
     become: yes
     register: suricata_result
     until: suricata_result.finished
     retries: 30
-    
+
   - name: Gather post drop count result
     shell: cat /sys/class/net/{{ capture_interface }}/statistics/rx_missed_errors
     register: post
-    
+
+  - name: Copy Results
+    fetch:
+      src: /experiment/gather_stats.csv
+      dest: "{{ inventory_hostname }}-gather_stats.csv"
+      flat: yes
+
   - set_fact:
       suricata_drops: "{{ suricata_result.stdout_lines | string | regex_search('drop: (\\d+)') | regex_search('\\d+') }}"
       suricata_packets: "{{ suricata_result.stdout_lines | string | regex_search('pkts: (\\d+)') | regex_search('\\d+') }}"
-      
+
  # - name: store result locally
  #   local_action: shell echo "{{pps_limit|int}},{{suricata_packets|int}},{{post.stdout|int - pre.stdout|int}},{{suricata_drops|int}}" >> result_ex3.txt
- 
+
   - debug: msg="Suricata packet drop {{ suricata_drops | regex_search('\d+') }}"
   - debug: msg="Interface drops {{ post.stdout|int - pre.stdout|int }}"
   - debug: msg="PPS Limit- {{ pps_limit }} -- Drop count before test {{ pre.stdout|int }} and after test {{ post.stdout|int }} (diff {{ post.stdout|int - pre.stdout|int }})"
