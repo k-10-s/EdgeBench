@@ -1,56 +1,150 @@
 ############Setup pre-reqs#############
+#https://docs.ansible.com/ansible/latest/user_guide/playbooks_variables.html#variables-discovered-from-systems-facts
 
 - name: Setup Experiment
   connection: ssh
   gather_facts: true
-  hosts: all
-        
+  hosts: nvidia
+  vars_files: vars.yml
+
   tasks:
   - name: Set authorized key taken from file
     authorized_key:
         user: kyle
         state: present
         key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
-  
+
+
+###Optimizations......
+
+  - set_fact:
+      capture_interface_config: "{{ ansible_facts[capture_interface] }}"
+
+  - name: Disable Generic Segmentation Offload
+    command: "ethtool -K {{ capture_interface }} gso off"
+    become: yes
+    when: capture_interface_config['features']['generic_segmentation_offload'] == "on"
+
+  - name: Disable Large Recieve Offload
+    command: "ethtool -K {{ capture_interface }} lro off"
+    become: yes
+    when: capture_interface_config['features']['large_receive_offload'] == "on"
+
+  - name: Disable Generic Recieve Offload
+    command: "ethtool -K {{ capture_interface }} gro off"
+    become: yes
+    when: capture_interface_config['features']['generic_receive_offload'] == "on"
+
+    #More research may be worthwile here
+  - name: Disable Rx Checksum Offloding
+    command: "ethtool -K {{ capture_interface }} rx off"
+    become: yes
+    when: capture_interface_config['features']['rx_checksumming'] == "on"
+
+  - name: Set Promiscuous Mode
+    command: "ifconfig {{ capture_interface }} promisc"
+    become: yes
+
+    #More research may be worthwile here.
+    #This appears to be set very low by default for legacy compatibility?
+#  - name: Set Rx-Ring Size to Pre-set Maximum
+#    command: "ethtool -G {{capture_interface}} rx $(ethtool -g eth0 | grep RX: | head -1)"
+#    become: yes
+
+    #https://www.kernel.org/doc/Documentation/networking/scaling.txt
+    #http://christophe.vandeplas.com/2013/11/suricata-capturekerneldrops-caused-by.html
+    #irqbalance??
+  - name: Determine CPU serving NIC Interrupts
+    shell: cat /proc/interrupts | grep -oP "\d+:\s+\K(.+)(?={{capture_interface}})" | tr -s [:space:] "\n" | head -$(grep -c ^processor /proc/cpuinfo) | cat -n | sort -k2rn | head -1 | cut -b5-6
+    register: irq_affinity
+
+    #other location: /sys/devices/1003000.pcie/pci0000:00/0000:00:01.0/0000:01:00.0/net/eth0/queues/rx-0\: echo e > rps_cpus
+  - name: Enable / Set Recieve Packet Steering Affinity
+    shell: "echo {{ bitmasks[irq_affinity.stdout_lines|int] }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
+    become: yes
+
+  - name: Set Recieve Packet Steering Flow
+    shell: "echo 32768 > /proc/sys/net/core/rps_sock_flow_entries && echo 32768 > /sys/class/net/eth0/queues/rx-0/rps_flow_cnt"
+    become: yes
+
+    #Setting this larger may be better
+    #https://community.mellanox.com/s/article/linux-sysctl-tuning
+  - name: Set Recieve Packet Steering Flow
+    shell: sysctl -w net.core.netdev_max_backlog=4096
+    become: yes
+
+  ##(on sender/generator) disable auto-neg & flow control
+
+
+
+
   - debug:
-        var: ansible_facts
-    
+        var: ansible_facts['processor_count']
+
   - debug:
-        var: ansible_facts['eth4']['features']['generic_segmentation_offload']
-#https://docs.ansible.com/ansible/latest/user_guide/playbooks_variables.html#variables-discovered-from-systems-facts
-  
-  
-  
-
-# - name: simulate long running op (15 sec), wait for up to 45 sec, poll every 5 sec
- #   command: /bin/sleep 1
- #   async: 45
- #   poll: 1
- 
-###Optimizations......        
-#(on sender/generator) disable auto-neg & flow control       
-            
-# ethtool -K eth0 gso off gro off lro off
-# ethtool -K eth0 rx off
-# ethtool -G eth0 rx 4096
-# ifconfig eth0 promisc
-# checksum importance 
-#irqbalance??
-#/sys/devices/1003000.pcie/pci0000:00/0000:00:01.0/0000:01:00.0/net/eth0/queues/rx-0\: echo e > rps_cpus
-#echo 32768 > /proc/sys/net/core/rps_sock_flow_entries
-#echo 32768 > /sys/class/net/eth0/queues/rx-0/rps_flow_cnt
-#http://christophe.vandeplas.com/2013/11/suricata-capturekerneldrops-caused-by.html
-
-
-# sudo sysctl -w net.core.netdev_max_backlog=3000
-#dd if=/dev/zero of=/media/root/ext/ddfile bs=1G count=1 oflag=direct
-#tcpdump varibale buffer size
-
-
-#apt install libyaml-dev libpcap-dev python-yaml libcap-ng-dev libmagic-dev liblz4-dev libjansson-dev cargo bc
-#./configure --prefix=/usr/ --sysconfdir=/etc/ --localstatedir=/var/
+        var: ansible_facts['memory_mb']['nocache']['free']
 
 
 
+###Install envrionment
+  - name: Install Depends
+    when: ansible_facts['os_family'] == "Debian"
+    apt:
+      name: "{{ packages }}"
+      update_cache: yes
+      force_apt_get: yes
+    vars:
+        packages:
+        - libyaml-dev
+        - libpcap-dev
+        - python-yaml
+        - libcap-ng-dev
+        - libmagic-dev
+        - liblz4-dev
+        - libhtp-dev
+        - libjansson-dev
+        - libnspr4-dev
+        - libnss3-dev
+        - cargo
+        - bc
+        - git
+        - tcpdump
+        - python-apt
+
+  - name: Clone Latest Suricata
+    git:
+      repo: 'https://github.com/OISF/suricata.git'
+      dest: "{{ working_dir }}/suricata"
+
+  - name: Clone Latest libhtp dependency
+    git:
+      repo: 'https://github.com/OISF/libhtp.git'
+      dest: "{{ working_dir }}/suricata/libhtp"
+
+  - name: Run autogen.sh
+    shell: ./autogen.sh
+    args:
+      chdir: "{{ working_dir }}/suricata"
+      creates: "{{ working_dir }}/suricata/configure"
+
+  - name: Run configure
+    shell: ./configure --prefix=/usr --sysconfdir=/etc/ --localstatedir=/var/
+    register: hmmm
+    args:
+      chdir: "{{ working_dir }}/suricata"
+      creates: "{{ working_dir }}/suricata/Makefile"
 
 
+  - debug:
+        var: hmmm.stdout_lines
+
+
+  - name: Build Suricata Latest
+    make:
+      chdir: "{{ working_dir }}/suricata/"
+
+#  - name: Install Suricata Latest
+#    make:
+#      chdir: "{{ working_dir }}/suricata/"
+#      target: install-full
+#    become: yes

@@ -9,6 +9,9 @@
 ##Break generator device out from "local" actions
 #Cleanup output
 #build proper inventory and secrets file
+##dd if=/dev/zero of=/media/root/ext/ddfile bs=1G count=1 oflag=direct
+#tcpdump varibale buffer size
+
 
 - name: Suricata Test
   connection: ssh
@@ -18,9 +21,6 @@
         num_packets: "3310426" #Dataset Pcap has this many packets
         pps_limit: "100000" #Default, override with "-e"
         send_interface: "eth1"
-
-
-
 
   tasks:
   - name: Copy Performance Monitor
@@ -33,7 +33,7 @@
     copy:
       src: suricata.yaml
       dest: /experiment/suricata.yaml
-      mode: '0644'
+      mode: '0777'
 
   - name: Gather pre drop count
     shell: cat /sys/class/net/{{ capture_interface }}/statistics/rx_missed_errors
@@ -53,7 +53,7 @@
 
 
   - name: Launch Performance Monitor
-    shell: bash /experiment/gather_stats.bash {{ pps_limit }} $(cat /experiment/pid) {{ capture_interface }} 0.5
+    shell: bash /experiment/gather_stats.bash {{ pps_limit }} $(cat /experiment/pid) {{ capture_interface }} 1
     poll: 0
     async: 360
     become: yes
@@ -79,8 +79,8 @@
 
   - name: Copy Results
     fetch:
-      src: /experiment/gather_stats.csv
-      dest: "{{ inventory_hostname }}-gather_stats.csv"
+      src: /experiment/gather_results.csv
+      dest: "{{ inventory_hostname }}-gather_results.csv"
       flat: yes
 
   - set_fact:

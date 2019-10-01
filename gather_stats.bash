@@ -11,8 +11,10 @@ if [ -z "$4" ]; then
 	exit 1
 fi
 
+cd "$(dirname "$0")"
 echo $$ > perfpid
 tmp=$(mktemp -d)
+
 echo "Temp folder at: $tmp"
 echo "New run -- tx PPS: $PPS -- Sample rate: $4" >> gather_results.csv
 echo "txpps,%cpu,%totalcpu,%mem,mem_MB,memavail,cpu_temp(c),cpu_power(w),rxpps,rxmbps,iface_drop,kern_drop,loop_time" >> gather_results.csv
@@ -69,9 +71,9 @@ function captureLap {
 	CPUTEMP[$LOOP_COUNT]=$(bc <<< 'scale=1; '$(cat /sys/devices/virtual/thermal/thermal_zone1/temp)' / 1000') #specific to TX1...
 	CPUPOWER[$LOOP_COUNT]=$(bc <<< 'scale=3; '$(cat /sys/devices/7000c400.i2c/i2c-1/1-0040/iio_device/in_power0_input)' / 1000') #specific to TX1...other sensors here as well
 
-	echo txPPS\: $PPS - \%CPU\: ${PCPU[$LOOP_COUNT]} - TOTAL CPU\: ${TOTAL_CPU[$LOOP_COUNT]} - \%MEM\: ${PMEM[$LOOP_COUNT]} - MEM MB\: ${MEM_MB[$LOOP_COUNT]} - \
-	MB FREE\: ${MEM_AVAIL[$LOOP_COUNT]} - CPUTEMP\(C\)\: ${CPUTEMP[$LOOP_COUNT]} - CPU POWER\(W\)\: ${CPUPOWER[$LOOP_COUNT]} - rxPPS\: ${RXPPS[$LOOP_COUNT]} - rxmbps\: ${RXBPS[$LOOP_COUNT]} - iface drps\: ${IFACE_DROPS[$LOOP_COUNT]}, krn drps\: ${KERN_DROPS[$LOOP_COUNT]}, loop\: $LOOP_TIME_REAL
-	echo $PPS,$PCPU,$TOTAL_CPU,$PMEM,$MEM_MB,$MEM_AVAIL,$CPUTEMP,$CPUPOWER,$RXPPS,$RXBPS,$IFACE_DROPS,$KERN_DROPS,$LOOP_TIME_REAL>> gather_results.csv
+	#echo txPPS\: $PPS - \%CPU\: ${PCPU[$LOOP_COUNT]} - TOTAL CPU\: ${TOTAL_CPU[$LOOP_COUNT]} - \%MEM\: ${PMEM[$LOOP_COUNT]} - MEM MB\: ${MEM_MB[$LOOP_COUNT]} - \
+	#MB FREE\: ${MEM_AVAIL[$LOOP_COUNT]} - CPUTEMP\(C\)\: ${CPUTEMP[$LOOP_COUNT]} - CPU POWER\(W\)\: ${CPUPOWER[$LOOP_COUNT]} - rxPPS\: ${RXPPS[$LOOP_COUNT]} - rxmbps\: ${RXBPS[$LOOP_COUNT]} - iface drps\: ${IFACE_DROPS[$LOOP_COUNT]}, krn drps\: ${KERN_DROPS[$LOOP_COUNT]}, loop\: $LOOP_TIME_REAL
+	echo $PPS,${PCPU[$LOOP_COUNT]},${TOTAL_CPU[$LOOP_COUNT]},${PMEM[$LOOP_COUNT]},${MEM_MB[$LOOP_COUNT]},${MEM_AVAIL[$LOOP_COUNT]},${CPUTEMP[$LOOP_COUNT]},${CPUPOWER[$LOOP_COUNT]},${RXPPS[$LOOP_COUNT]},${RXBPS[$LOOP_COUNT]},${IFACE_DROPS[$LOOP_COUNT]},${KERN_DROPS[$LOOP_COUNT]},$LOOP_TIME_REAL>> gather_results.csv
 
 	(( LOOP_COUNT=LOOP_COUNT+1 ))
 }
@@ -96,6 +98,7 @@ function buildFinalStats {
 	SUM_IFACE_DROPS=$(echo "${IFACE_DROPS[*]}"|bc)
 	SUM_KERN_DROPS=$(echo "${KERN_DROPS[*]}"|bc)
 	AVG_IFACE_DROPS=$(echo "(${IFACE_DROPS[*]}) / (${#IFACE_DROPS[*]} - $(echo ${IFACE_DROPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
+	AVG_KERN_DROPS=$(echo "(${KERN_DROPS[*]}) / (${#KERN_DROPS[*]} - $(echo ${KERN_DROPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
 	AVG_RXPPS=$(echo "(${RXPPS[*]}) / (${#RXPPS[*]} - $(echo ${RXPPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
 	AVG_RXBPS=$(echo "(${RXBPS[*]}) / (${#RXBPS[*]} - $(echo ${RXBPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
 	AVG_PMEM=$(echo "scale=1; (${PMEM[*]}) / (${#PMEM[*]} - $(echo ${PMEM[*]} | grep -ow '0.0' | wc -l))"|bc)
@@ -114,16 +117,17 @@ function finish {
 	killall top 2> /dev/null
 	buildFinalStats
 
-	if [ ! -f /experiment/gather_totals.csv ]; then
-		echo "txpps,%pcpu.µ,%pcpu.max,%tcpu.µ,%tcpu.max,%mem.µ,%mem.max,memMB.max,memfree.min,temp.µ,temp.max,power.µ,power.max,rxpps.µ,rxpps.max,rxmbps.µ,rxmbps.max,nicdrop.sum,nicdrop.µ,kerndrop.sum,samprate" >> gather_totals.csv
+	if [ ! -f gather_totals.csv ]; then
+		echo "txpps,%pcpu.µ,%pcpu.max,%tcpu.µ,%tcpu.max,%mem.µ,%mem.max,memMB.max,memfree.min,temp.µ,temp.max,power.µ,power.max,rxpps.µ,rxpps.max,rxmbps.µ,rxmbps.max,nicdrop.sum,nicdrop.µ,kerndrop.sum,kerndrop.µ,samprate" >> gather_totals.csv
 	fi
 
 	#handle some zero cases
 	if [ -z "$AVG_IFACE_DROPS" ]; then AVG_IFACE_DROPS=0; fi
+	if [ -z "$AVG_KERN_DROPS" ]; then AVG_KERN_DROPS=0; fi
 	if [ -z "$AVG_RXBPS" ]; then AVG_RXBPS=0; fi
 	if [ -z "$AVG_RXPPS" ]; then AVG_RXPPS=0; fi
 
-	echo $PPS,$AVG_PCPU,$MAX_PCPU,$AVG_TOTAL_CPU,$MAX_TOTAL_CPU,$AVG_PMEM,$MAX_PMEM,$MAX_MEM_MB,$MIN_MEM_AVAIL,$AVG_CPUTEMP,$MAX_CPUTEMP,$AVG_CPUPOWER,$MAX_CPUPOWER,$AVG_RXPPS,$MAX_RXPPS,$AVG_RXBPS,$MAX_RXBPS,$SUM_IFACE_DROPS,$AVG_IFACE_DROPS,$SUM_KERN_DROPS,$SAMPLE_RATE >> gather_totals.csv
+	echo $PPS,$AVG_PCPU,$MAX_PCPU,$AVG_TOTAL_CPU,$MAX_TOTAL_CPU,$AVG_PMEM,$MAX_PMEM,$MAX_MEM_MB,$MIN_MEM_AVAIL,$AVG_CPUTEMP,$MAX_CPUTEMP,$AVG_CPUPOWER,$MAX_CPUPOWER,$AVG_RXPPS,$MAX_RXPPS,$AVG_RXBPS,$MAX_RXBPS,$SUM_IFACE_DROPS,$AVG_IFACE_DROPS,$SUM_KERN_DROPS,$AVG_KERN_DROPS,$SAMPLE_RATE >> gather_totals.csv
 	column -t -s , gather_totals.csv
 	exec 3>&1- 4>&2-
 	exit 0
