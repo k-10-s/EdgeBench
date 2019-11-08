@@ -6,33 +6,59 @@
   gather_facts: false
   hosts: all
   vars:
-        packet_size_max: "64"
+        packet_size_max: "1500"
         packet_size_min: "64"
+        pps_limit: "100000" #Default, override with "-e"
         packet_size: "512"
-        num_packets: "5000000"
-        capture_interface: "eth0"
+        num_packets: "2000000"
        #ansible_become_password: !vault |
             #  $ANSIBLE_VAULT;1.1;AES256
           #fix for repo
   tasks:
-  - name: Gather pre drop count
+    #Location of this stat is driver dependent. Not the same everywhere
+  - name: Gather NVIDIA Board Pre Drop Count
     shell: cat /sys/class/net/{{ capture_interface }}/statistics/rx_missed_errors
-    register: pre
-   
-  - name: Reset test rx interface
-    shell:  ifconfig {{ capture_interface }} down && ifconfig {{ capture_interface }} up
-    become: yes
-   
-  - name: Generate traffic
-    local_action: 
-        module: shell sudo pkt-gen -i eth1 -f tx -n {{ num_packets }} -l {{ packet_size }} -w 8 -zZ
-     
-  - name: Gather post drop count result
-    shell: cat /sys/class/net/{{ capture_interface }}/statistics/rx_missed_errors
-    register: post
-    
-  - name: store result locally
-    local_action: shell echo "{{ packet_size|int, num_packets|int, post.stdout|int - pre.stdout|int }}" >> ratelimit_result
+    register: pren
+    when: "'rpi' not in group_names"
 
-  - debug: 
-        msg: "Size: {{ packet_size }} -- Drop count before test {{ pre.stdout|int }} and after test {{ post.stdout|int }} (diff {{ post.stdout|int - pre.stdout|int }})"
+  - name: Gather RPi Board Pre Drop Count
+    shell: ethtool -S eth0 | grep "RX Dropped Frames:" | awk '{print $4}'
+    register: prer
+    when: "'nvidia' not in group_names"
+
+   #Not all drivers hadle this the same way
+   #- name: Reset test rx interface
+   # shell:  ifconfig {{ capture_interface }} down && ifconfig {{ capture_interface }} up
+   # become: yes
+
+  - name: Generate Traffic
+    local_action:
+        module: shell sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -l {{ packet_size_max }} -l {{ packet_size_min }} -R {{ pps_limit }} -w 8 -zZ
+
+  - name: Gather NVIDIA Board Post Drop Count
+    shell: cat /sys/class/net/{{ capture_interface }}/statistics/rx_missed_errors
+    register: postn
+    when: "'rpi' not in group_names"
+
+  - name: Gather RPi Board Post Drop Count
+    shell: ethtool -S eth0 | grep "RX Dropped Frames:" | awk '{print $4}'
+    register: postr
+    when: "'nvidia' not in group_names"
+
+  - name: Store NVIDIA Result
+    local_action: shell echo "{{inventory_hostname}},{{ pps_limit }},{{num_packets|int}},{{postn.stdout|int - pren.stdout|int}}" >> pps_ratelimit_result.csv
+    when: "'rpi' not in group_names"
+
+  - name: Store RPi Result
+    local_action: shell echo "{{inventory_hostname}},{{ pps_limit }},{{num_packets|int}},{{postr.stdout|int - prer.stdout|int}}" >> pps_ratelimit_result.csv
+    when: "'nvidia' not in group_names"
+
+  - name: NVIDIA Interface Drops
+    debug:
+        msg: "PPS: {{ pps_limit }} sent from {{ send_interface }} -- rx on {{ capture_interface }} Drop count before {{ pren.stdout|int }} and after {{ postn.stdout|int }} (diff {{ postn.stdout|int - pren.stdout|int }})"
+    when: "'rpi' not in group_names"
+
+  - name: RPi Interface Drops
+    debug:
+        msg: "PPS: {{ pps_limit }} sent from {{ send_interface }} -- rx on {{ capture_interface }} Drop count before {{ prer.stdout|int }} and after {{ postr.stdout|int }} (diff {{ postr.stdout|int - prer.stdout|int }})"
+    when: "'nvidia' not in group_names"
