@@ -1,0 +1,27 @@
+all:
+  children:
+    rpi:
+        hosts:
+            rpi3bp:
+                send_interface: eth3
+                capture_interface: eth0
+        vars:
+            ansible_user: pi
+            ansible_become: yes
+            ansible_become_method: sudo
+            working_dir: /experiment
+    nvidia:
+        hosts:
+            tx1:
+                capture_interface: eth0
+                send_interface: eth1
+            tx2:
+                capture_interface: eth1
+                send_interface: eth2
+        vars:
+            ansible_user: usernameondevice
+            ansible_become: yes
+            ansible_become_method: sudo
+            ansible_become_password: "yourpassword:)"
+            capture_interface: eth0
+            working_dir: /experiment
