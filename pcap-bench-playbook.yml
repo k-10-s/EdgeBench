@@ -1,0 +1,105 @@
+#########################################
+############Experiment 2#################
+
+- name: Raw Packet Capture Rate Limit
+  connection: ssh
+  gather_facts: true
+  hosts: all
+  vars:
+        packet_size_max: "1500"
+        packet_size_min: "64"
+        pps_limit: 100000 #Default, override with "-e"
+        num_packets: 100000 #4M is half of dataset, about 3GB
+        buffer_size: 2000000 #Max is default possible based on libpcap. Tested below if less is available
+
+  tasks:
+  - name: Copy Performance Monitor
+    copy:
+      src: gather_stats.bash
+      dest: /experiment/gather_stats.bash
+      mode: '0755'
+  
+  - name: Limit buffer_size
+    set_fact:
+        buffer_size: "{{ 700 * ansible_facts['memory_mb']['nocache']['free']|int }}" #"Free Memory is {{ ansible_facts['memory_mb']['nocache']['free'] }} so tcpdump buffer size will be: {{ 800 * ansible_facts['memory_mb']['nocache']['free']|int }} KiB"
+    when:  " ansible_facts['memory_mb']['nocache']['free'] < 2048"
+
+   #disk speed is important here. Flash is almost certainly too slow at fast speeds
+   #buffer size is also a variable to tune
+   #/media/root/ext/experiment-{{ pps_limit }}.pcap
+   
+   
+   
+  - name: Begin tcpdump #will time out after an hour
+    shell: tcpdump -i {{ capture_interface }} -B {{ buffer_size }} -n -w /experiment/rate_test.pcap 2> /experiment/counters & echo $! > /experiment/tcpdump.pid 
+    become: yes
+    poll: 0
+    async: 36000
+
+
+  - name: Wait for Warmup
+    command: /bin/sleep 5
+    async: 45
+    poll: 5
+
+
+  - name: Launch Performance Monitor
+    shell: bash /experiment/gather_stats.bash {{ pps_limit }} $(cat /experiment/tcpdump.pid) {{ capture_interface }} 1
+    register: results_async
+    poll: 0
+    async: 36000
+    become: yes
+
+
+
+#  - name: Generate Traffic
+#    local_action:
+#        module: shell sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -l {{ packet_size_max }} -l {{ packet_size_min }} -R {{ pps_limit }} -w 8 -zZ
+
+
+  - name: Send Traffic via tcpreplay (Rate {{pps_limit}} pps)
+    local_action:
+        module: shell 
+        _raw_params: sudo tcpreplay -i {{ send_interface }} --netmap -p {{ pps_limit }} -L {{num_packets}} ~/Desktop/hush/truncd.pcap  #Thursday-WorkingHours.pcap  #cic_pcap1.pcap
+    register: sender    
+        
+  - debug: 
+        var: sender.stdout 
+          
+  - name: Stop tcpdump
+    shell: killall tcpdump
+    become: yes
+    ignore_errors: yes
+
+  - name: Wait for Results
+    async_status: jid="{{ results_async.ansible_job_id }}"
+    become: yes
+    register: results
+    until: results.finished
+    retries: 30
+
+  - name: Copy Results
+    fetch:
+      src: /experiment/{{ inventory_hostname }}-tcpdump-results-verbose.csv
+      dest: "{{ inventory_hostname }}-tcpdump-results-verbose.csv"
+      flat: yes
+
+  - name: Copy Totals
+    fetch:
+      src: /experiment/{{ inventory_hostname }}-tcpdump-results.csv
+      dest: "{{ inventory_hostname }}-tcpdump-results.csv"
+      flat: yes
+      
+ # - name: Scan Running Results
+ #   local_action: 
+ #       module: command 
+ #       _raw_params: column -t -s , {{ inventory_hostname }}-tcpdump-results.csv 
+ #   register: results
+
+  - name: Display Running Results 
+    debug: 
+        var: results.stdout
+
+#  - debug: msg="Total Packets {{num_packets}} --- Kernel drops {{ tcpdump_result.stderr_lines[3] | regex_search('\d+')  }}"
+#  - debug: msg="Interface drops {{ post.stdout|int - pre.stdout|int }}"
+#  - debug: msg="PPS Limit- {{ pps_limit }} -- Drop count before test {{ pre.stdout|int }} and after test {{ post.stdout|int }} (diff {{ post.stdout|int - pre.stdout|int }})"

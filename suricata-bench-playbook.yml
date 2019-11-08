@@ -1,33 +1,25 @@
 #########################################
 ############Experiment 3#################
 
-
 ##TODO:
 ##Build / run "configure" playbook to install suricata and deps,
-##Build playbook to setup generator deivce and setup capture device interfaces
-##Upload proper suricata config .yaml to capture devices
-##Break generator device out from "local" actions
-#Cleanup output
-#build proper inventory and secrets file
 ##dd if=/dev/zero of=/media/root/ext/ddfile bs=1G count=1 oflag=direct
-#tcpdump varibale buffer size
-
 
 - name: Suricata Test
   connection: ssh
   gather_facts: false
   hosts: all
   vars:
-        num_packets: "3310426" #Dataset Pcap has this many packets
+        #num_packets: "3310426" #Dataset Pcap has this many packets
+        num_packets: "9322025" #8021615
         pps_limit: "100000" #Default, override with "-e"
-        send_interface: "eth1"
 
   tasks:
   - name: Copy Performance Monitor
     copy:
       src: gather_stats.bash
       dest: /experiment/gather_stats.bash
-      mode: '0644'
+      mode: '0755'
 
   - name: Copy Latest suricata.yaml Configs
     copy:
@@ -35,12 +27,14 @@
       dest: /experiment/suricata.yaml
       mode: '0777'
 
+  #copy rules
+
   - name: Gather pre drop count
     shell: cat /sys/class/net/{{ capture_interface }}/statistics/rx_missed_errors
     register: pre
 
   - name: Begin Suricata
-    shell: suricata -c /experiment/suricata.yaml -i {{ capture_interface }} --pidfile /experiment/pid
+    shell: LD_LIBRARY_PATH=/usr/lib /usr/bin/suricata -c /experiment/suricata.yaml -i {{ capture_interface }} --pidfile /experiment/pid
     register: suricata_async
     become: yes
     poll: 0
@@ -60,7 +54,7 @@
 
   - name: Send traffic via tcpreplay
     local_action:
-        module: shell sudo tcpreplay -i {{ send_interface }} --netmap -p {{ pps_limit }} -K ~/cic-ids/useme_capWIN-J6GMIG1DQE5-172.31.67.62_iwasfixed
+        module: shell sudo tcpreplay -i {{ send_interface }} --netmap -p {{ pps_limit }} -K ~/Desktop/hush/truncd.pcap
 
   - name: Stop Everything
     shell: kill "$(cat /experiment/pid)"; kill "$(cat /experiment/perfpid)"
@@ -81,6 +75,12 @@
     fetch:
       src: /experiment/gather_results.csv
       dest: "{{ inventory_hostname }}-gather_results.csv"
+      flat: yes
+
+  - name: Copy Totals
+    fetch:
+      src: /experiment/gather_totals.csv
+      dest: "{{ inventory_hostname }}-gather_totals.csv"
       flat: yes
 
   - set_fact:
