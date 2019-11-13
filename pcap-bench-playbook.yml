@@ -9,10 +9,14 @@
         packet_size_max: "1500"
         packet_size_min: "64"
         pps_limit: 100000 #Default, override with "-e"
-        num_packets: 100000 #4M is half of dataset, about 3GB
+        num_packets: 5000000 #4M is half of dataset, about 3GB
         buffer_size: 2000000 #Max is default possible based on libpcap. Tested below if less is available
 
   tasks:
+  - name: Determine Capture Interface Driver
+    shell: "ethtool -i {{capture_interface}} | awk 'NR == 1 {print $2}'"
+    register: capture_interface_driver
+  
   - name: Copy Performance Monitor
     copy:
       src: gather_stats.bash
@@ -38,7 +42,7 @@
 
 
   - name: Wait for Warmup
-    command: /bin/sleep 5
+    command: /bin/sleep 8
     async: 45
     poll: 5
 
@@ -80,14 +84,14 @@
 
   - name: Copy Results
     fetch:
-      src: /experiment/{{ inventory_hostname }}-tcpdump-results-verbose.csv
-      dest: "{{ inventory_hostname }}-tcpdump-results-verbose.csv"
+      src: /experiment/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results-verbose.csv
+      dest: "{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results-verbose.csv"
       flat: yes
 
   - name: Copy Totals
     fetch:
-      src: /experiment/{{ inventory_hostname }}-tcpdump-results.csv
-      dest: "{{ inventory_hostname }}-tcpdump-results.csv"
+      src: /experiment/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results.csv
+      dest: "{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results.csv"
       flat: yes
       
  # - name: Scan Running Results

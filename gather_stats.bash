@@ -52,8 +52,8 @@ NIC_DRIVER=$(ethtool -i $IFACE | head -1 | awk '{ print $2 }')
 PROCESS_NAME=$(ps -p $PID -o comm=)
 
 echo "Temp folder at: $tmp"
-echo "New run -- tx PPS: $PPS -- Sample rate: $4 -- Driver: $NIC_DRIVER" >> $HOSTNAME-$PROCESS_NAME-results-verbose.csv
-echo "txpps,%cpu,%totalcpu,%mem,mem_MB,memavail,cpu_temp(c),cpu_power(w),rxpps,rxmbps,iface_drop,kern_drop,loop_time" >> $HOSTNAME-$PROCESS_NAME-results-verbose.csv
+echo "New run -- tx PPS: $PPS -- Sample rate: $4 -- Driver: $NIC_DRIVER" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results-verbose.csv
+echo "txpps,%cpu,%totalcpu,%mem,mem_MB,memavail,cpu_temp(c),cpu_power(w),rxpps,rxmbps,iface_drop,kern_drop,loop_time" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results-verbose.csv
 echo "Watching process: $PROCESS_NAME ($PID)"
 echo "I'm running on a: $DEVICE_FAM board with a $NIC_DRIVER interface "
 
@@ -63,7 +63,7 @@ echo "I'm running on a: $DEVICE_FAM board with a $NIC_DRIVER interface "
 KERN_DROP_LAST=0
 if [ "$NIC_DRIVER" == 'e1000e' ] || [ "$NIC_DRIVER" == 'igb' ] || [ "$NIC_DRIVER" == 'tg3' ]; then 
 	IFACE_DROP_LAST=$(cat /sys/class/net/$IFACE/statistics/rx_missed_errors);
-elif [ "$NIC_DRIVER" == 'lan78xx' ]; then 
+elif [ "$NIC_DRIVER" == 'lan78xx' ] || [ "$NIC_DRIVER" == 'bcmgenet' ] ; then 
 	IFACE_DROP_LAST=$(ethtool -S $IFACE | grep "RX Dropped Frames:" | awk '{print $4}'); 
 fi
 
@@ -140,7 +140,7 @@ function captureLap {
 
 #	echo txPPS\: $PPS - \%CPU\: ${PCPU[$LOOP_COUNT]} - TOTAL CPU\: ${TOTAL_CPU[$LOOP_COUNT]} - \%MEM\: ${PMEM[$LOOP_COUNT]} - MEM MB\: ${MEM_MB[$LOOP_COUNT]} - \
 #	MB FREE\: ${MEM_AVAIL[$LOOP_COUNT]} - CPUTEMP\(C\)\: ${CPUTEMP[$LOOP_COUNT]} - CPU POWER\: ${CPUPOWER[$LOOP_COUNT]} - rxPPS\: ${RXPPS[$LOOP_COUNT]} - rxmbps\: ${RXBPS[$LOOP_COUNT]} - iface drps\: ${IFACE_DROPS[$LOOP_COUNT]}, krn drps\: ${KERN_DROPS[$LOOP_COUNT]}, loop\: $LOOP_TIME_REAL
-	echo $PPS,${PCPU[$LOOP_COUNT]},${TOTAL_CPU[$LOOP_COUNT]},${PMEM[$LOOP_COUNT]},${MEM_MB[$LOOP_COUNT]},${MEM_AVAIL[$LOOP_COUNT]},${CPUTEMP[$LOOP_COUNT]},${CPUPOWER[$LOOP_COUNT]},${RXPPS[$LOOP_COUNT]},${RXBPS[$LOOP_COUNT]},${IFACE_DROPS[$LOOP_COUNT]},${KERN_DROPS[$LOOP_COUNT]},$LOOP_TIME_REAL>> $HOSTNAME-$PROCESS_NAME-results-verbose.csv
+	echo $PPS,${PCPU[$LOOP_COUNT]},${TOTAL_CPU[$LOOP_COUNT]},${PMEM[$LOOP_COUNT]},${MEM_MB[$LOOP_COUNT]},${MEM_AVAIL[$LOOP_COUNT]},${CPUTEMP[$LOOP_COUNT]},${CPUPOWER[$LOOP_COUNT]},${RXPPS[$LOOP_COUNT]},${RXBPS[$LOOP_COUNT]},${IFACE_DROPS[$LOOP_COUNT]},${KERN_DROPS[$LOOP_COUNT]},$LOOP_TIME_REAL>> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results-verbose.csv
 
 	(( LOOP_COUNT=LOOP_COUNT+1 ))
 }
@@ -203,8 +203,8 @@ function finish {
 	killall top 2> /dev/null
 	buildFinalStats
 
-	if [ ! -f $HOSTNAME-$PROCESS_NAME-results.csv ]; then
-		echo "txpps,%pidcpu.avg,%pidcpu.max,%syscpu.avg,%syscpu.max,%pidmem.avg,%sysmem.max,pidmemMB.max,sysmemfree.min,temp.avg,temp.max,power.avg,power.max,rxpps.avg,rxpps.max,rxmbps.avg,rxmbps.max,nicdrop.sum,nicdrop.avg,kerndrop.sum,kerndrop.avg,rate" >> $HOSTNAME-$PROCESS_NAME-results.csv
+	if [ ! -f $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv ]; then
+		echo "txpps,%pidcpu.avg,%pidcpu.max,%syscpu.avg,%syscpu.max,%pidmem.avg,%sysmem.max,pidmemMB.max,sysmemfree.min,temp.avg,temp.max,power.avg,power.max,rxpps.avg,rxpps.max,rxmbps.avg,rxmbps.max,nicdrop.sum,nicdrop.avg,kerndrop.sum,kerndrop.avg,rate" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv
 	fi
 
 	#handle some empty cases before writing to file
@@ -218,8 +218,8 @@ function finish {
 	if [ ${CPUTEMP[0]} == 'NA' ]; then AVG_CPUTEMP=NA; MAX_CPUTEMP=NA; fi 
 	if [ ${CPUPOWER[0]} == 'NA' ]; then AVG_CPUPOWER=NA; MAX_CPUPOWER=NA; fi
 
-	echo $PPS,$AVG_PCPU,$MAX_PCPU,$AVG_TOTAL_CPU,$MAX_TOTAL_CPU,$AVG_PMEM,$MAX_PMEM,$MAX_MEM_MB,$MIN_MEM_AVAIL,$AVG_CPUTEMP,$MAX_CPUTEMP,$AVG_CPUPOWER,$MAX_CPUPOWER,$AVG_RXPPS,$MAX_RXPPS,$AVG_RXBPS,$MAX_RXBPS,$SUM_IFACE_DROPS,$AVG_IFACE_DROPS,$SUM_KERN_DROPS,$AVG_KERN_DROPS,$SAMPLE_RATE >> "$HOSTNAME-$PROCESS_NAME-results.csv"
-	column -t -s , $HOSTNAME-$PROCESS_NAME-results.csv
+	echo $PPS,$AVG_PCPU,$MAX_PCPU,$AVG_TOTAL_CPU,$MAX_TOTAL_CPU,$AVG_PMEM,$MAX_PMEM,$MAX_MEM_MB,$MIN_MEM_AVAIL,$AVG_CPUTEMP,$MAX_CPUTEMP,$AVG_CPUPOWER,$MAX_CPUPOWER,$AVG_RXPPS,$MAX_RXPPS,$AVG_RXBPS,$MAX_RXBPS,$SUM_IFACE_DROPS,$AVG_IFACE_DROPS,$SUM_KERN_DROPS,$AVG_KERN_DROPS,$SAMPLE_RATE >> "$HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv"
+	column -t -s , $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv
 	#exec 3>&1- 4>&2-
 	exit 0
 }
