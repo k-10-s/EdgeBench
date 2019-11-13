@@ -1,116 +1,18 @@
 ############Setup pre-reqs#############
 #https://docs.ansible.com/ansible/latest/user_guide/playbooks_variables.html#variables-discovered-from-systems-facts
-- name: Setup Experiment
+- name: Prepare Sensors
   connection: ssh
   gather_facts: true
   hosts: all
   vars_files: vars.yml
 
-###Optimizations......
+###Install environment
   tasks:
-  - set_fact:
-      capture_interface_config: "{{ ansible_facts[capture_interface] }}"
-
-  - name: Disable Generic Segmentation Offload
-    command: "ethtool -K {{ capture_interface }} gso off"
-    become: yes
-    when: capture_interface_config['features']['generic_segmentation_offload'] == "on"
-
-  - name: Disable Large Recieve Offload
-    command: "ethtool -K {{ capture_interface }} lro off"
-    become: yes
-    when: capture_interface_config['features']['large_receive_offload'] == "on"
-
-  - name: Disable Generic Recieve Offload
-    command: "ethtool -K {{ capture_interface }} gro off"
-    become: yes
-    when: capture_interface_config['features']['generic_receive_offload'] == "on"
-
-    #More research may be worthwile here
-  - name: Disable Rx Checksum Offloding
-    command: "ethtool -K {{ capture_interface }} rx off"
-    become: yes
-    when: capture_interface_config['features']['rx_checksumming'] == "on"
-
-  - name: Set Promiscuous Mode
-    command: "ifconfig {{ capture_interface }} promisc"
-    become: yes
-
-    #More research may be worthwile here.
-    #This appears to be set very low by default for legacy compatibility?
-#  - name: Set Rx-Ring Size to Pre-set Maximum
-#    command: "ethtool -G {{capture_interface}} rx $(ethtool -g eth0 | grep RX: | head -1)"
-#    become: yes
-     ignore_errors: yes
-
-    #Multipule rx queues dont make much sense on small boards where the IRQs cant be remapped 
-    #the SMP affinity for all of them hits the same core, sorta defeating the purpose
-  - name: Limit Number of Hardware Queues
-    command: ethtool -L eth1 rx 1
-    become: yes
-    ignore_errors: yes
-
-   #When Disk I/O is very important. Also lifetime of flash...
-  - name: Disable swap on RPis 
-    shell: swapoff -a
-    become: yes
-    when: "'nvidia' not in group_names"
-   
-  - name: Bump RPi Throttling Temp (3B only)
-    shell: echo "temp_soft_limit=70.0" >> /boot/config.txt
-    become: yes
-    when: "'nvidia' not in group_names"   
-   
-
-    #https://www.kernel.org/doc/Documentation/networking/scaling.txt
-    #http://christophe.vandeplas.com/2013/11/suricata-capturekerneldrops-caused-by.html
-    #irqbalance??
-  - name: Determine CPU serving NIC Interrupts
-    shell: cat /proc/interrupts | grep -oP "\d+:\s+\K(.+)(?={{capture_interface}})" | tr -s [:space:] "\n" | head -$(grep -c ^processor /proc/cpuinfo) | cat -n | sort -k2rn | head -1 | cut -b5-6
-    register: irq_affinity
-
-  - debug:
-        msg: "It appears like CPU # {{irq_affinity.stdout_lines|int}} is handling the NIC IRQ"
-
-  - name: Enable / Set Receive Packet Steering Affinity
-    shell: "echo {{ bitmasks[irq_affinity.stdout_lines|int] }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
-    become: yes
-    ignore_errors: yes
-
-  - name: Set Receive Packet Steering Flow
-    shell: "echo 32768 > /proc/sys/net/core/rps_sock_flow_entries && echo 32768 > /sys/class/net/eth0/queues/rx-0/rps_flow_cnt"
-    become: yes
-    ignore_errors: yes
-
-    #Setting this larger may be better
-    #https://community.mellanox.com/s/article/linux-sysctl-tuning
-  - name: Set Receive Packet Steering Flow
-    shell: sysctl -w net.core.netdev_max_backlog=4096
-    become: yes
-
-  - name: Prep Local Send Interface
-    local_action:
-        module: shell 
-        _raw_params: ethtool -A {{ send_interface }} autoneg off tx off rx off
-
-  
-  ##build / enable netmap for gen nic
-
-
-  ##Auto-Scaling for Suricata TODO
-  - debug:
-        msg: "CPU count for {{ ansible_hostname }} is {{ ansible_facts['processor_count'] }}"
-  - debug:
-        var: ansible_facts['memory_mb']['nocache']['free']
-
-
-
-###Install envrionment
-  - name: Install Depends (may take awhile)
+  - name: Install Prerequisites (may take awhile)
     when: ansible_facts['os_family'] == "Debian"
     apt:
       name: "{{ packages }}"
-      update_cache: yes
+      #update_cache: yes
       force_apt_get: yes
     vars:
         packages:
@@ -147,45 +49,291 @@
         - tcpdump
         - python-apt
         - make
-
-  - name: Create Experiment Directory
+        - nano
+        - locate 
+    ignore_errors: yes
+    
+  - name: Create Sensor Directory
     file:
-      path: "{{ working_dir }}"
+      path: "{{ sensor_dir }}"
       state: directory
       mode: '0777'
 
   - name: Create Log Directory
     file:
-      path: "{{ working_dir }}/log"
+      path: "{{ sensor_dir }}/log"
       state: directory
       mode: '0777' 
-
- # - name: Copy Suricata Source
- #   copy:
- #     src: suricata-5.0.0.tar.gz
- #     dest: "{{ working_dir }}"
- #     mode: '0777'
-
-  - name: Unpack Suricata Source
+      
+  - name: Copy Default Suricata Rules
+    copy:
+      src: suricata.rules
+      dest: "{{ sensor_dir }}/suricata.rules"
+      mode: '0766'
+ 
+  - name: Download and Unpack Suricata Source
     unarchive:
-        src: https://www.openinfosecfoundation.org/download/suricata-5.0.0.tar.gz
-        dest: "{{ working_dir }}"
-        remote_src: yes
-
+      src: https://www.openinfosecfoundation.org/download/suricata-5.0.0.tar.gz
+      dest: "{{ sensor_dir }}"
+      remote_src: yes
+      creates: "{{ sensor_dir }}/suricata-5.0.0/"
+      register: suricata_source
+    
   - name: Run configure
     shell: ./configure --prefix=/usr/ --sysconfdir=/etc/ --localstatedir=/var/
     args:
-      chdir: "{{ working_dir }}/suricata-5.0.0"
-      creates: "{{ working_dir }}/suricata-5.0.0/Makefile"
+      chdir: "{{ sensor_dir }}/suricata-5.0.0"
+    register: suricata_version
+    when: suricata_source is changed
 
- # something wonky happening when done with ansible 
- # - name: Build Suricata Latest
- #   make:
- #     chdir: "{{ working_dir }}/suricata-5.0.0/"
+  - name: Build Suricata Latest
+    shell: make
+      chdir: "{{ sensor_dir }}/suricata-5.0.0/"
+    register: suricata_build
+    when: suricata_version is changed
+
+  - name: Install Suricata Latest
+    shell: "make install-full"
+      chdir: "{{ sensor_dir }}/suricata-5.0.0/"
+    become: yes
+    when: suricata_build is changed
+    
+  - name: Standardize Hostname
+    shell: |
+        hostnamectl set-hostname {{ ansible_hostname }}  
+        echo "127.0.0.1    {{ ansible_hostname }}" > /etc/hosts
+    become: yes
+    when: ansible_facts['hostname'] != ansible_hostname 
+   
+  - name: Wipe old Results
+    file: 
+        path: "{{ sensor_dir }}/*.csv"
+        state: absent
+    become: yes
+    
+ # - name: Reboot to apply changes and updates
+ #   reboot: 
  #   become: yes
 
- # - name: Install Suricata Latest
- #   make:
- #     chdir: "{{ working_dir }}/suricata-5.0.0/"
- #     target: install-full
- #   become: yes
+###Optimizations......
+  #- set_fact:
+   #   capture_interface_config: "{{ ansible_facts[capture_interface] }}"
+
+    # More important to be disabled for suricata, per the documentation
+  - name: Disable Large Receive Offload
+    command: "ethtool -K {{ capture_interface }} lro off"
+    become: yes
+    when: ansible_facts[capture_interface]['features']['large_receive_offload'] == "on"
+
+    # More important to be disabled for suricata
+  - name: Disable Generic Receive Offload
+    command: "ethtool -K {{ capture_interface }} gro off"
+    become: yes
+    when: ansible_facts[capture_interface]['features']['generic_receive_offload'] == "on"
+
+    #More research may be worthwhile here. It seemed to boost suricata?
+  #- name: Disable Rx Checksum Offloading
+  #  command: "ethtool -K {{ capture_interface }} rx off"
+  #  become: yes
+  #  when: capture_interface_config['features']['rx_checksumming'] == "on"
+
+  - name: Set Promiscuous Mode
+    command: "ifconfig {{ capture_interface }} promisc"
+    become: yes
+
+    #More research may be worthwhile here.
+    #This appears to be set very low by default for legacy compatibility?
+    #Can set them larger since we dont care as much about latency
+    #rpi drivers dont support this
+  - name: Set Rx-Ring Size to Pre-set Maximums
+    shell: "ethtool -G {{capture_interface}} rx $(ethtool -g {{capture_interface}} | grep RX: | head -1 | awk '{print $2}')"
+    become: yes
+    register: ring_result
+    ignore_errors: yes
+    failed_when: "'Operation not supported' in ring_result.stderr"
+    when: "'rpi' not in group_names"
+
+    #Multipule rx queues dont make much sense on small boards where the IRQs cant be remapped 
+    #the SMP affinity for all of them hits the same core, making it worse 
+  - name: Limit Number of Hardware Queues
+    shell: ethtool -L {{capture_interface}} rx 1
+    become: yes
+    ignore_errors: yes
+    register: queues_result
+    failed_when: "'Invalid argument' in queues_result.stderr"
+
+   #When Disk I/O is very important. Also lifetime of flash...
+  - name: Disable swap on RPis 
+    shell: swapoff -a
+    become: yes
+    when: "'nvidia' not in group_names"
+   
+  - name: Bump RPi Throttling Temp (3B+ only)
+    shell: echo "temp_soft_limit=70.0" >> /boot/config.txt
+    become: yes
+    when: "'nvidia' not in group_names"   
+   
+    #https://www.kernel.org/doc/Documentation/networking/scaling.txt
+    #http://christophe.vandeplas.com/2013/11/suricata-capturekerneldrops-caused-by.html
+    #irqbalance??
+  - name: Determine CPU serving NIC Interrupts
+    shell: cat /proc/interrupts | grep -oP "\d+:\s+\K(.+)(?={{capture_interface}})" | tr -s [:space:] "\n" | head -$(grep -c ^processor /proc/cpuinfo) | cat -n | sort -k2rn | head -1 | cut -b5-6
+    register: irq_affinity
+    changed_when: false
+
+  - debug:
+        msg: "It appears like CPU # {{irq_affinity.stdout_lines|int}} is handling the NIC IRQ"
+
+  - name: Enable / Set Receive Packet Steering Affinity
+    #shell: "echo {{ bitmasks[irq_affinity.stdout_lines|int] }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
+    shell: "echo e > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"   
+    become: yes
+    ignore_errors: yes
+
+
+    #https://blog.packagecloud.io/eng/2016/06/22/monitoring-tuning-linux-networking-stack-receiving-data
+  - name: Set Receive Packet Steering Flow
+    shell: |
+        echo 32768 > /proc/sys/net/core/rps_sock_flow_entries  
+        echo 32768 > /sys/class/net/eth0/queues/rx-0/rps_flow_cnt
+    become: yes
+    ignore_errors: yes
+
+    #Setting this larger may be better
+    #https://community.mellanox.com/s/article/linux-sysctl-tuning
+    #https://blog.packagecloud.io/eng/2016/06/22/monitoring-tuning-linux-networking-stack-receiving-data/
+  - name: Set Kernel Max Backlog
+    shell: sysctl -w net.core.netdev_max_backlog=4096
+    become: yes
+
+  - name: Disable Flow Control On Send Interface
+    local_action:
+        module: shell 
+        _raw_params: ethtool -A {{ send_interface }} autoneg off tx off rx off 
+    ignore_errors: yes
+    become: yes
+    register: local_result
+    failed_when: "'Cannot' in local_result.stderr"
+    
+    
+  - name: Disable Offloads on Send Interface
+    local_action:
+        module: shell
+        _raw_params: "ethtool -K {{ send_interface }} gso off tso off gro off lro off"
+    become: yes
+    
+    
+##Generator Setup##
+#This assumes your ansible host is also the traffic generator. It doesnt have to be..
+- name: Prepare Traffic Generator 
+  connection: local
+  gather_facts: true 
+  hosts: localhost
+
+  tasks:
+  - name: Install Prerequisites (may take awhile)
+    when: ansible_facts['os_family'] == "Debian"
+    apt:
+      name: "{{ packages }}"
+      force_apt_get: yes
+    vars:
+        packages: 
+        #this may be missing some things to build fragroute support
+        #fragrout and tcpreplay-edit are needed to fix dataset pcaps that have jumbo (up to 64K) frames
+        - build-essential
+        - install
+        - libpcap-dev
+        - dnet-common
+        - libdumbnet-dev
+        - libdnet
+        - libevent1
+        - libdnet-dev
+        - libdumbnet1
+        - nano
+        - locate 
+    ignore_errors: yes
+    become: yes
+  
+ 
+  - name: Create Generator Directory
+    file:
+      path: "{{ generator_dir }}"
+      state: directory
+      mode: '0777'
+    become: yes
+
+
+    ## netmap ##
+  - name: Clone Latest netmap Source
+    git: 
+        repo: https://github.com/luigirizzo/netmap.git
+        dest: "{{ generator_dir }}/netmap"
+    register: netmap_source
+
+    #Using this specific NIC so select it's driver manually 
+    #Netmaps auto detect is flaky esp on kernel 5+
+  - name: Build netmap Makefile
+    shell: ./configure --select-version=igb:5.3.5.39 --driver-suffix=-netmap
+    args:
+      chdir: "{{ generator_dir }}/netmap"
+      #creates: "{{ generator_dir }}/netmap/config.status"
+    register: netmap_version
+    when: netmap_source is changed
+
+  - name: Build netmap
+    shell: make
+    args:
+        chdir: "{{ generator_dir }}/netmap"
+        #creates: "{{ generator_dir }}/netmap/netmap.ko"
+    register: netmap_build
+    when: netmap_version is changed
+
+  - name: Install netmap
+    shell: make install
+    args:
+        chdir: "{{ generator_dir }}/netmap"
+    become: yes
+    register: netmap_install
+    when: netmap_build is changed
+
+  - name: Enable Netmap Drivers
+    shell: |
+     rmmod igb 2> /dev/null
+     rmmod igb_netmap 2> /dev/null
+     rmmod netmap 2> /dev/null
+     insmod {{ generator_dir }}/netmap/netmap.ko
+     insmod {{ generator_dir }}/netmap/igb/igb-netmap.ko
+    become: yes
+    when: netmap_install is changed
+    
+   ## tcpreplay ##
+  - name: Clone tcpreplay Source
+    unarchive: 
+        src: https://github.com/appneta/tcpreplay/releases/download/v4.3.1/tcpreplay-4.3.1.tar.xz
+        dest: "{{ generator_dir }}"
+        remote_src: yes
+        creates: "{{ generator_dir }}/tcpreplay-4.3.1/"
+    register: tcpreplay_source
+    
+  - name: Build tcpreplay Makefile
+    shell: "./configure --with-netmap={{ generator_dir }}/netmap"
+    args:
+      chdir: "{{ generator_dir }}/tcpreplay-4.3.1"
+      #creates: "{{ generator_dir }}/tcpreplay-4.3.1/Makefile"
+    when: tcpreplay_source is changed or netmap_build is changed
+    register: tcpreplay_version
+    
+  - name: Build tcpreplay
+    shell: make
+    args:
+      chdir: "{{ generator_dir }}/tcpreplay-4.3.1/"
+      #creates: "{{ generator_dir }}/tcpreplay-4.3.1/src/tcpreplay"
+    register: tcpreplay_build
+    when: tcpreplay_version is changed
+      
+  - name: Install tcpreplay
+    shell: make install
+    args:
+      chdir: "{{ generator_dir }}/tcpreplay-4.3.1/"
+    become: yes
+    when: tcpreplay_version is changed
