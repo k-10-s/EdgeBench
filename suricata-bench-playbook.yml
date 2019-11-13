@@ -5,6 +5,11 @@
 ##Build / run "configure" playbook to install suricata and deps,
 ##dd if=/dev/zero of=/media/root/ext/ddfile bs=1G count=1 oflag=direct
 
+
+
+
+
+
 - name: Suricata Test
   connection: ssh
   gather_facts: false
@@ -15,6 +20,12 @@
         pps_limit: "100000" #Default, override with "-e"
 
   tasks:
+    ##Auto-Scaling for Suricata TODO
+  - debug:
+        msg: "CPU count for {{ ansible_hostname }} is {{ ansible_facts['processor_count'] }}"
+  - debug:
+        var: ansible_facts['memory_mb']['nocache']['free']
+    
   - name: Copy Performance Monitor
     copy:
       src: gather_stats.bash
