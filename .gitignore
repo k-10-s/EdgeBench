@@ -2,3 +2,6 @@
 inventory.yml
 passwd.yml
 *.pcap
+test.yml
+testcontrol.yml
+loopcontrol.yml
