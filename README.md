@@ -8,6 +8,24 @@ Ansible Playbooks to benchmark network sensor performance of embedded sized hard
 2. Ideally with a NIC that supports netmap native drivers
 3. Something to test against (see inventory for examples)
 
+### Add eveything to your hosts file for name resolution, i.e. 
+
+```
+nano /etc/hosts...
+10.0.0.1        tx1
+10.0.0.2        tx2
+10.0.0.3        rpi3bp
+10.0.0.4        rpi4
+10.0.0.5        xavier
+```
+
+
+
+
+### First time connecting will need a password
+
+`ansible-playbook -i inventory.yml --ask-pass --ask-become-pass  prep-playbook.yml`
+
 
 ### Running playbooks:
 `ansible-playbook -i inventory.yml suricata-bench-playbook.yml`

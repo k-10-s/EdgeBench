@@ -68,7 +68,7 @@
         module: shell sudo tcpreplay -i {{ send_interface }} --netmap -p {{ pps_limit }} -K ~/Desktop/hush/truncd.pcap
 
   - name: Stop Everything
-    shell: kill "$(cat /experiment/pid)"; kill "$(cat /experiment/perfpid)"
+    shell: kill "$(cat /experiment/pid)"; kill "$(cat /experiment/gather.pid)"
     become: yes
 
   - name: Wait for Cooldown

@@ -8,6 +8,19 @@
 
 ###Install environment
   tasks:
+ 
+  #This assumes all your SSH passwords are the same. 
+  - name: Set SSH Keys
+    authorized_key:
+        user: "{{ansible_user}}"
+        state: present
+        key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+
+    #this keeps doing it, need to only do once
+#  - name: Setup Passwordless sudo
+#    shell: echo '"{{ansible_user}}" ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+#    become: yes
+
   - name: Install Prerequisites (may take awhile)
     when: ansible_facts['os_family'] == "Debian"
     apt:
@@ -57,7 +70,10 @@
     file:
       path: "{{ sensor_dir }}"
       state: directory
+      owner: "{{ ansible_user }}"
+      group: "{{ ansible_user }}"
       mode: '0777'
+    become: yes
 
   - name: Create Log Directory
     file:
@@ -77,10 +93,10 @@
       dest: "{{ sensor_dir }}"
       remote_src: yes
       creates: "{{ sensor_dir }}/suricata-5.0.0/"
-      register: suricata_source
+    register: suricata_source
     
   - name: Run configure
-    shell: ./configure --prefix=/usr/ --sysconfdir=/etc/ --localstatedir=/var/
+    shell: "./configure --prefix=/usr/ --sysconfdir=/etc/ --localstatedir=/var/"
     args:
       chdir: "{{ sensor_dir }}/suricata-5.0.0"
     register: suricata_version
@@ -88,15 +104,17 @@
 
   - name: Build Suricata Latest
     shell: make
+    args:
       chdir: "{{ sensor_dir }}/suricata-5.0.0/"
     register: suricata_build
-    when: suricata_version is changed
+    when: suricata_version is changed 
 
   - name: Install Suricata Latest
     shell: "make install-full"
+    args:
       chdir: "{{ sensor_dir }}/suricata-5.0.0/"
     become: yes
-    when: suricata_build is changed
+    #when: suricata_build is changed
     
   - name: Standardize Hostname
     shell: |
@@ -105,20 +123,20 @@
     become: yes
     when: ansible_facts['hostname'] != ansible_hostname 
    
-  - name: Wipe old Results
-    file: 
-        path: "{{ sensor_dir }}/*.csv"
-        state: absent
+  - name: Clean Up old Results
+    shell: |
+        rm -rf {{ sensor_dir }}/*.csv
+        rm -rf {{ sensor_dir }}/*.pid
+        rm -rf counters
+        rm -rf perfpid
     become: yes
+   # warn: false
     
  # - name: Reboot to apply changes and updates
  #   reboot: 
  #   become: yes
 
 ###Optimizations......
-  #- set_fact:
-   #   capture_interface_config: "{{ ansible_facts[capture_interface] }}"
-
     # More important to be disabled for suricata, per the documentation
   - name: Disable Large Receive Offload
     command: "ethtool -K {{ capture_interface }} lro off"
@@ -241,12 +259,11 @@
         #this may be missing some things to build fragroute support
         #fragrout and tcpreplay-edit are needed to fix dataset pcaps that have jumbo (up to 64K) frames
         - build-essential
-        - install
         - libpcap-dev
         - dnet-common
         - libdumbnet-dev
         - libdnet
-        - libevent1
+        - libevent1-dev
         - libdnet-dev
         - libdumbnet1
         - nano

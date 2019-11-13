@@ -17,7 +17,7 @@ if [ ! -d /proc/$PID ]; then echo "supplied PID isn't running, exiting"; exit 1;
 
 #Store my pid so I can be killed later
 cd "$(dirname "$0")"
-echo $$ > perfpid
+echo $$ > gather.pid
 tmp=$(mktemp -d)
 
 #top has to be kept running to gather accurate CPU stats over time. 
@@ -45,6 +45,7 @@ declare -a KERN_DROPS
 if [ $(sudo lshw -short -c system | awk 'FNR == 3 {print $2}') == 'Raspberry' ]; then DEVICE_FAM=pi;
 elif [ $(sudo lshw -short -c system | awk 'FNR == 3 {print $2}') == 'Jetson-TX1' ]; then DEVICE_FAM=nvidia-tx1;
 elif [ $(sudo lshw -short -c system | awk 'FNR == 3 {print $2}') == 'quill' ]; then DEVICE_FAM=nvidia-tx2;
+elif [ $(sudo lshw -short -c system | awk 'FNR == 3 {print $2}') == 'Jetson-AGX' ]; then DEVICE_FAM=nvidia-xavier;
 else DEVICE_FAM=unknown; fi
 
 
@@ -61,7 +62,7 @@ echo "I'm running on a: $DEVICE_FAM board with a $NIC_DRIVER interface "
 
 #Initialize vars
 KERN_DROP_LAST=0
-if [ "$NIC_DRIVER" == 'e1000e' ] || [ "$NIC_DRIVER" == 'igb' ] || [ "$NIC_DRIVER" == 'tg3' ]; then 
+if [ "$NIC_DRIVER" == 'e1000e' ] || [ "$NIC_DRIVER" == 'igb' ] || [ "$NIC_DRIVER" == 'tg3' ] || [ "$NIC_DRIVER" == 'eqos' ] ; then 
 	IFACE_DROP_LAST=$(cat /sys/class/net/$IFACE/statistics/rx_missed_errors);
 elif [ "$NIC_DRIVER" == 'lan78xx' ] || [ "$NIC_DRIVER" == 'bcmgenet' ] ; then 
 	IFACE_DROP_LAST=$(ethtool -S $IFACE | grep "RX Dropped Frames:" | awk '{print $4}'); 
@@ -103,7 +104,7 @@ function captureLap {
 		IFACE_DROP_NOW=$(ethtool -S $IFACE | grep "RX Dropped Frames:" | awk '{print $4}')
 		IFACE_DROPS[$LOOP_COUNT]=$(bc <<< "scale=0; ($IFACE_DROP_NOW-$IFACE_DROP_LAST) / $LOOP_TIME_REAL  ");
 		IFACE_DROP_LAST=$IFACE_DROP_NOW
-	elif [ "$NIC_DRIVER" == 'e1000e' ] || [ "$NIC_DRIVER" == 'igb' ] || [ "$NIC_DRIVER" == 'tg3' ]; then
+	elif [ "$NIC_DRIVER" == 'e1000e' ] || [ "$NIC_DRIVER" == 'igb' ] || [ "$NIC_DRIVER" == 'tg3' ] || [ "$NIC_DRIVER" == 'eqos' ]; then
 		IFACE_DROP_NOW=$(cat /sys/class/net/$IFACE/statistics/rx_missed_errors)
 		IFACE_DROPS[$LOOP_COUNT]=$(bc <<< "scale=0; ($IFACE_DROP_NOW-$IFACE_DROP_LAST) / $LOOP_TIME_REAL  ")
 		IFACE_DROP_LAST=$IFACE_DROP_NOW
