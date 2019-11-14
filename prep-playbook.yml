@@ -8,21 +8,32 @@
 
 ###Install environment
   tasks:
- 
-  #This assumes all your SSH passwords are the same. 
+  
+    #Only supporting debian sensors at this point though yum should not be a problem as future work
+  - name: Check OS Version
+    fail: msg="Currently only supports Debian based sensors."
+    when: ansible_facts['os_family'] != "Debian"
+  
+  #This assumes all your SSH passwords are the same.
+  #Or, run this playbook once per host with "-t auth -l "hostname" -k -K"
   - name: Set SSH Keys
     authorized_key:
         user: "{{ansible_user}}"
         state: present
         key: "{{ lookup('file', '~/.ssh/id_rsa.pub') }}"
+    tags: auth
 
-    #this keeps doing it, need to only do once
-#  - name: Setup Passwordless sudo
-#    shell: echo '"{{ansible_user}}" ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
-#    become: yes
-
+  - name: Setup Passwordless sudo
+    lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: '^%sudo'
+        line: '%sudo ALL=(ALL) NOPASSWD: ALL'
+        validate: 'visudo -cf %s'
+    tags: auth
+    become: yes
+   
   - name: Install Prerequisites (may take awhile)
-    when: ansible_facts['os_family'] == "Debian"
     apt:
       name: "{{ packages }}"
       #update_cache: yes
@@ -65,6 +76,7 @@
         - nano
         - locate 
     ignore_errors: yes
+    become: yes
     
   - name: Create Sensor Directory
     file:
@@ -86,6 +98,7 @@
       src: suricata.rules
       dest: "{{ sensor_dir }}/suricata.rules"
       mode: '0766'
+    tags: suricata
  
   - name: Download and Unpack Suricata Source
     unarchive:
@@ -94,27 +107,40 @@
       remote_src: yes
       creates: "{{ sensor_dir }}/suricata-5.0.0/"
     register: suricata_source
+    tags: suricata
+    
+  - name: Check Previuos Installs
+    stat: 
+      path: "/usr/bin/suricata"
+    register: previous_failure
+    tags: suricata
     
   - name: Run configure
     shell: "./configure --prefix=/usr/ --sysconfdir=/etc/ --localstatedir=/var/"
     args:
       chdir: "{{ sensor_dir }}/suricata-5.0.0"
+      creates: "{{ sensor_dir }}/suricata-5.0.0/Makefile"
     register: suricata_version
-    when: suricata_source is changed
+    when: suricata_source is changed or not previous_failure.stat.exists
+    tags: suricata
 
   - name: Build Suricata Latest
     shell: make
     args:
       chdir: "{{ sensor_dir }}/suricata-5.0.0/"
     register: suricata_build
-    when: suricata_version is changed 
+    when: suricata_version is changed
+    tags: suricata
 
   - name: Install Suricata Latest
-    shell: "make install-full"
+    shell: |
+        make install-conf
+        make install
     args:
       chdir: "{{ sensor_dir }}/suricata-5.0.0/"
     become: yes
-    #when: suricata_build is changed
+    tags: suricata
+    when: suricata_build is changed
     
   - name: Standardize Hostname
     shell: |
@@ -128,13 +154,15 @@
         rm -rf {{ sensor_dir }}/*.csv
         rm -rf {{ sensor_dir }}/*.pid
         rm -rf counters
-        rm -rf perfpid
+    args:
+        warn: false
     become: yes
-   # warn: false
+    tags: wipe
     
- # - name: Reboot to apply changes and updates
- #   reboot: 
- #   become: yes
+  - name: Reboot to apply changes and updates
+    reboot: 
+    become: yes
+    tags: reset
 
 ###Optimizations......
     # More important to be disabled for suricata, per the documentation
@@ -227,18 +255,22 @@
   - name: Disable Flow Control On Send Interface
     local_action:
         module: shell 
-        _raw_params: ethtool -A {{ send_interface }} autoneg off tx off rx off 
+        _raw_params: sudo ethtool -A {{ send_interface }} autoneg off tx off rx off
+        args:
+            warn: false
     ignore_errors: yes
-    become: yes
     register: local_result
     failed_when: "'Cannot' in local_result.stderr"
+    tags: generator
     
     
   - name: Disable Offloads on Send Interface
     local_action:
         module: shell
-        _raw_params: "ethtool -K {{ send_interface }} gso off tso off gro off lro off"
-    become: yes
+        _raw_params: "sudo ethtool -K {{ send_interface }} gso off tso off gro off lro off"
+        args:
+            warn: false
+    tags: generator
     
     
 ##Generator Setup##
