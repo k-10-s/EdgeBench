@@ -9,11 +9,21 @@ SAMPLE_RATE=$4
 if [ -z "$4" ]; then
 	echo "Usage: bash $0 <test pps rate> <monitor pid> <capture interface> <sample rate in seconds>"
 	echo "ex: bash $0 100000 8912 eth0 0.5"
+	echo "a negative pid will watch only the interface / irq handler"
 	echo "sudo access required"
 	exit 1
 fi
 
-if [ ! -d /proc/$PID ]; then echo "supplied PID isn't running, exiting"; exit 1; fi
+if [ $PID -lt '0' ]; then 
+	echo "Using interface rate mode only";
+	#Watching softirq daemon, that handles the last half of the interrupt from the NIC
+	#Thread 0 is most likely on the ARM based boards (first thread) 
+	PID=$(top -b -n 1 | grep ksoftirqd/0 | awk 'NR == 1 { print $1}');
+	PROCESS_NAME=ksoftirqd0;
+elif [ ! -d /proc/$PID ]; then 
+	echo "supplied PID isn't running, exiting"; 
+	exit 1; 
+else PROCESS_NAME=$(ps -p $PID -o comm=); fi
 
 #Store my pid so I can be killed later
 cd "$(dirname "$0")"
@@ -25,8 +35,8 @@ tmp=$(mktemp -d)
 top -p $PID -b -d 1 > /$tmp/tmp &
 
 echo "Bumping process priority"
-sudo renice -n -15 $(pidof top)
-sudo renice -n -20 $$
+sudo renice -n -15 $(pidof top) #bump my top process priority
+sudo renice -n -20 $$ #bump my priority to max
 
 declare -a PCPU
 declare -a TOTAL_CPU
@@ -40,7 +50,6 @@ declare -a MEM_AVAIL
 declare -a IFACE_DROPS
 declare -a KERN_DROPS
 
-
 #Might be a better way to fingerprint the machine
 if [ $(sudo lshw -short -c system | awk 'FNR == 3 {print $2}') == 'Raspberry' ]; then DEVICE_FAM=pi;
 elif [ $(sudo lshw -short -c system | awk 'FNR == 3 {print $2}') == 'Jetson-TX1' ]; then DEVICE_FAM=nvidia-tx1;
@@ -50,15 +59,13 @@ else DEVICE_FAM=unknown; fi
 
 
 NIC_DRIVER=$(ethtool -i $IFACE | head -1 | awk '{ print $2 }') 
-PROCESS_NAME=$(ps -p $PID -o comm=)
+
 
 echo "Temp folder at: $tmp"
 echo "New run -- tx PPS: $PPS -- Sample rate: $4 -- Driver: $NIC_DRIVER" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results-verbose.csv
 echo "txpps,%cpu,%totalcpu,%mem,mem_MB,memavail,cpu_temp(c),cpu_power(w),rxpps,rxmbps,iface_drop,kern_drop,loop_time" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results-verbose.csv
 echo "Watching process: $PROCESS_NAME ($PID)"
 echo "I'm running on a: $DEVICE_FAM board with a $NIC_DRIVER interface "
-
-
 
 #Initialize vars
 KERN_DROP_LAST=0
@@ -120,6 +127,9 @@ function captureLap {
 	elif [ "$DEVICE_FAM" == 'nvidia-tx2' ]; then
 		CPUTEMP[$LOOP_COUNT]=$(bc <<< 'scale=1; '$(cat /sys/devices/virtual/thermal/thermal_zone1/temp)' / 1000')
 		CPUPOWER[$LOOP_COUNT]=$(bc <<< 'scale=3; '$(cat /sys/bus/i2c/drivers/ina3221x/0-0041/iio_device/in_power0_input)' / 1000')
+	elif [ "$DEVICE_FAM" == 'nvidia-xavier' ]; then
+		CPUTEMP[$LOOP_COUNT]=$(bc <<< 'scale=1; '$(cat /sys/devices/virtual/thermal/thermal_zone0/temp)' / 1000')
+		CPUPOWER[$LOOP_COUNT]=$(bc <<< 'scale=3; '$(cat /sys/bus/i2c/drivers/ina3221x/1-0040/iio_device/in_power1_input)' / 1000')
 	else 
 		CPUTEMP[$LOOP_COUNT]=NA
 		CPUPOWER[$LOOP_COUNT]=NA
@@ -199,13 +209,15 @@ function buildFinalStats {
 
 function finish {
 	rm -rf "$tmp"
-	rm -rf perfpid
+	rm -rf gather.pid
 
 	killall top 2> /dev/null
 	buildFinalStats
 
 	if [ ! -f $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv ]; then
-		echo "txpps,%pidcpu.avg,%pidcpu.max,%syscpu.avg,%syscpu.max,%pidmem.avg,%sysmem.max,pidmemMB.max,sysmemfree.min,temp.avg,temp.max,power.avg,power.max,rxpps.avg,rxpps.max,rxmbps.avg,rxmbps.max,nicdrop.sum,nicdrop.avg,kerndrop.sum,kerndrop.avg,rate" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv
+		#echo "txpps,%pidcpu.avg,%pidcpu.max,%syscpu.avg,%syscpu.max,%pidmem.avg,%sysmem.max,pidmemMB.max,sysmemfree.min,temp.avg,temp.max,power.avg,power.max,rxpps.avg,rxpps.max,rxmbps.avg,rxmbps.max,nicdrop.sum,nicdrop.avg,kerndrop.sum,kerndrop.avg,rate" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv
+		echo "tx,%pidcpu,%pidcpu,%syscpu,%syscpu,%pidmem,%sysmem,pidmemMB,sysmemfree,temp,temp,power,power,rxpps,rxpps,rxmbps,rxmbps,nicdrop,nicdrop,kerndrop,kerndrop,rate" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv;
+		echo "pps,avg,max,avg,max,avg,max,max,min,avg,max,avg,max,avg,max,avg,max,sum,avg,sum,avg,sec" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv;
 	fi
 
 	#handle some empty cases before writing to file
@@ -225,10 +237,9 @@ function finish {
 	exit 0
 }
 
-
 ##"main" function below
 sleep 2 #brief warmup
-trap finish EXIT #Capture ctrl-c or kill signals so I can cleanup
+trap finish EXIT SIGTERM #Capture ctrl-c or kill signals so I can cleanup
 #exec 3>&1 4>&2 #bash magic to get the output of the time command and save the functions stdout/stderr
 while [ -d /proc/$PID  ]
 do
