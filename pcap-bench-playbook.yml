@@ -20,7 +20,7 @@
   - name: Copy Performance Monitor
     copy:
       src: gather_stats.bash
-      dest: /experiment/gather_stats.bash
+      dest: {{sensor_dir}}/gather_stats.bash
       mode: '0755'
   
   - name: Limit buffer_size
@@ -30,12 +30,12 @@
 
    #disk speed is important here. Flash is almost certainly too slow at fast speeds
    #buffer size is also a variable to tune
-   #/media/root/ext/experiment-{{ pps_limit }}.pcap
+   #/media/root/ext{{sensor_dir}}-{{ pps_limit }}.pcap
    
    
    
   - name: Begin tcpdump #will time out after an hour
-    shell: tcpdump -i {{ capture_interface }} -B {{ buffer_size }} -n -w /experiment/rate_test.pcap 2> /experiment/counters & echo $! > /experiment/tcpdump.pid 
+    shell: tcpdump -i {{ capture_interface }} -B {{ buffer_size }} -n -w {{sensor_dir}}/rate_test.pcap 2> {{sensor_dir}}/counters & echo $! > {{sensor_dir}}/tcpdump.pid 
     become: yes
     poll: 0
     async: 36000
@@ -48,7 +48,7 @@
 
 
   - name: Launch Performance Monitor
-    shell: bash /experiment/gather_stats.bash {{ pps_limit }} $(cat /experiment/tcpdump.pid) {{ capture_interface }} 1
+    shell: bash {{sensor_dir}}/gather_stats.bash {{ pps_limit }} $(cat {{sensor_dir}}/tcpdump.pid) {{ capture_interface }} 1
     register: results_async
     poll: 0
     async: 36000
@@ -65,6 +65,7 @@
     local_action:
         module: shell 
         _raw_params: sudo tcpreplay -i {{ send_interface }} --netmap -p {{ pps_limit }} -L {{num_packets}} ~/Desktop/hush/truncd.pcap  #Thursday-WorkingHours.pcap  #cic_pcap1.pcap
+        warn: false
     register: sender    
         
   - debug: 
@@ -84,13 +85,13 @@
 
   - name: Copy Results
     fetch:
-      src: /experiment/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results-verbose.csv
+      src: {{sensor_dir}}/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results-verbose.csv
       dest: "{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results-verbose.csv"
       flat: yes
 
   - name: Copy Totals
     fetch:
-      src: /experiment/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results.csv
+      src: {{sensor_dir}}/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results.csv
       dest: "{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results.csv"
       flat: yes
       

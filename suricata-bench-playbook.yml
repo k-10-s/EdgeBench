@@ -29,13 +29,13 @@
   - name: Copy Performance Monitor
     copy:
       src: gather_stats.bash
-      dest: /experiment/gather_stats.bash
+      dest: {{sensor_dir}}/gather_stats.bash
       mode: '0755'
 
   - name: Copy Latest suricata.yaml Configs
     copy:
       src: suricata.yaml
-      dest: /experiment/suricata.yaml
+      dest: {{sensor_dir}}/suricata.yaml
       mode: '0777'
 
   #copy rules
@@ -45,7 +45,7 @@
     register: pre
 
   - name: Begin Suricata
-    shell: LD_LIBRARY_PATH=/usr/lib /usr/bin/suricata -c /experiment/suricata.yaml -i {{ capture_interface }} --pidfile /experiment/pid
+    shell: LD_LIBRARY_PATH=/usr/lib /usr/bin/suricata -c {{sensor_dir}}/suricata.yaml -i {{ capture_interface }} --pidfile {{sensor_dir}}/pid
     register: suricata_async
     become: yes
     poll: 0
@@ -58,7 +58,7 @@
 
 
   - name: Launch Performance Monitor
-    shell: bash /experiment/gather_stats.bash {{ pps_limit }} $(cat /experiment/pid) {{ capture_interface }} 1
+    shell: bash {{sensor_dir}}/gather_stats.bash {{ pps_limit }} $(cat {{sensor_dir}}/pid) {{ capture_interface }} 1
     poll: 0
     async: 360
     become: yes
@@ -68,7 +68,7 @@
         module: shell sudo tcpreplay -i {{ send_interface }} --netmap -p {{ pps_limit }} -K ~/Desktop/hush/truncd.pcap
 
   - name: Stop Everything
-    shell: kill "$(cat /experiment/pid)"; kill "$(cat /experiment/gather.pid)"
+    shell: kill "$(cat {{sensor_dir}}/pid)"; kill "$(cat {{sensor_dir}}/gather.pid)"
     become: yes
 
   - name: Wait for Cooldown
@@ -84,13 +84,13 @@
 
   - name: Copy Results
     fetch:
-      src: /experiment/gather_results.csv
+      src: {{sensor_dir}}/gather_results.csv
       dest: "{{ inventory_hostname }}-gather_results.csv"
       flat: yes
 
   - name: Copy Totals
     fetch:
-      src: /experiment/gather_totals.csv
+      src: {{sensor_dir}}/gather_totals.csv
       dest: "{{ inventory_hostname }}-gather_totals.csv"
       flat: yes
 
