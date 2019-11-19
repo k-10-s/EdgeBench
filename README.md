@@ -19,23 +19,19 @@ nano /etc/hosts...
 10.0.0.5        xavier
 ```
 
+### Generate some SSH keys if you don't have them already
+`ssh-keygen`
 
-
-
-### First time connecting will need a password
-
+### First time connecting will need a password, afterwards your SSH keys will be used
 `ansible-playbook -i inventory.yml --ask-pass --ask-become-pass  prep-playbook.yml`
-
 
 ### Running playbooks:
 `ansible-playbook -i inventory.yml suricata-bench-playbook.yml`
 
 ### Overriding variables from command line:
-
 `ansible-playbook -i inventory.yml -e "pps_limit=104000" suricata-bench-playbook.yml`
 
 ### Limiting to only certain hosts from inventory: 
-
 `ansible-playbook -i inventory.yml -l nvidia pcap-bench-playbook.yml`
 
 

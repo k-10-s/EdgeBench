@@ -8,12 +8,12 @@
 
 ###Install environment
   tasks:
-  
+
     #Only supporting debian sensors at this point though yum should not be a problem as future work
   - name: Check OS Version
     fail: msg="Currently only supports Debian based sensors."
     when: ansible_facts['os_family'] != "Debian"
-  
+
   #This assumes all your SSH passwords are the same.
   #Or, run this playbook once per host with "-t auth -l "hostname" -k -K"
   - name: Set SSH Keys
@@ -32,7 +32,7 @@
         validate: 'visudo -cf %s'
     tags: auth
     become: yes
-   
+
   - name: Install Prerequisites (may take awhile)
     apt:
       name: "{{ packages }}"
@@ -74,10 +74,10 @@
         - python-apt
         - make
         - nano
-        - locate 
+        - locate
     ignore_errors: yes
     become: yes
-    
+
   - name: Create Sensor Directory
     file:
       path: "{{ sensor_dir }}"
@@ -91,15 +91,15 @@
     file:
       path: "{{ sensor_dir }}/log"
       state: directory
-      mode: '0777' 
-      
+      mode: '0777'
+
   - name: Copy Default Suricata Rules
     copy:
       src: suricata.rules
       dest: "{{ sensor_dir }}/suricata.rules"
       mode: '0766'
     tags: suricata
- 
+
   - name: Download and Unpack Suricata Source
     unarchive:
       src: https://www.openinfosecfoundation.org/download/suricata-5.0.0.tar.gz
@@ -108,13 +108,13 @@
       creates: "{{ sensor_dir }}/suricata-5.0.0/"
     register: suricata_source
     tags: suricata
-    
+
   - name: Check Previuos Installs
-    stat: 
+    stat:
       path: "/usr/bin/suricata"
     register: previous_failure
     tags: suricata
-    
+
   - name: Run configure
     shell: "./configure --prefix=/usr/ --sysconfdir=/etc/ --localstatedir=/var/"
     args:
@@ -141,14 +141,14 @@
     become: yes
     tags: suricata
     when: suricata_build is changed
-    
+
   - name: Standardize Hostname
     shell: |
-        hostnamectl set-hostname {{ ansible_hostname }}  
+        hostnamectl set-hostname {{ ansible_hostname }}
         echo "127.0.0.1    {{ ansible_hostname }}" > /etc/hosts
     become: yes
-    when: ansible_facts['hostname'] != ansible_hostname 
-   
+    when: ansible_facts['hostname'] != ansible_hostname
+
   - name: Clean Up old Results
     shell: |
         rm -rf {{ sensor_dir }}/*.csv
@@ -158,9 +158,9 @@
         warn: false
     become: yes
     tags: wipe
-    
+
   - name: Reboot to apply changes and updates
-    reboot: 
+    reboot:
     become: yes
     tags: reset
 
@@ -199,8 +199,8 @@
     failed_when: "'Operation not supported' in ring_result.stderr"
     when: "'rpi' not in group_names"
 
-    #Multipule rx queues dont make much sense on small boards where the IRQs cant be remapped 
-    #the SMP affinity for all of them hits the same core, making it worse 
+    #Multipule rx queues dont make much sense on small boards where the IRQs cant be remapped
+    #the SMP affinity for all of them hits the same core, making it worse
   - name: Limit Number of Hardware Queues
     shell: ethtool -L {{capture_interface}} rx 1
     become: yes
@@ -209,19 +209,22 @@
     failed_when: "'Invalid argument' in queues_result.stderr"
 
    #When Disk I/O is very important. Also lifetime of flash...
-  - name: Disable swap on RPis 
+  - name: Disable swap on RPis
     shell: swapoff -a
     become: yes
     when: "'nvidia' not in group_names"
-   
+
+    #only need to do once...
   - name: Bump RPi Throttling Temp (3B+ only)
     shell: echo "temp_soft_limit=70.0" >> /boot/config.txt
     become: yes
-    when: "'nvidia' not in group_names"   
-   
+    when: "'nvidia' not in group_names"
+
     #https://www.kernel.org/doc/Documentation/networking/scaling.txt
     #http://christophe.vandeplas.com/2013/11/suricata-capturekerneldrops-caused-by.html
     #irqbalance??
+
+  #Has some bugs
   - name: Determine CPU serving NIC Interrupts
     shell: cat /proc/interrupts | grep -oP "\d+:\s+\K(.+)(?={{capture_interface}})" | tr -s [:space:] "\n" | head -$(grep -c ^processor /proc/cpuinfo) | cat -n | sort -k2rn | head -1 | cut -b5-6
     register: irq_affinity
@@ -230,9 +233,11 @@
   - debug:
         msg: "It appears like CPU # {{irq_affinity.stdout_lines|int}} is handling the NIC IRQ"
 
+
+  #All the ARM boards tested so far use CPU0 for interrupts (the cpu that booted the kernel)
   - name: Enable / Set Receive Packet Steering Affinity
     #shell: "echo {{ bitmasks[irq_affinity.stdout_lines|int] }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
-    shell: "echo e > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"   
+    shell: "echo e > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
     become: yes
     ignore_errors: yes
 
@@ -240,8 +245,8 @@
     #https://blog.packagecloud.io/eng/2016/06/22/monitoring-tuning-linux-networking-stack-receiving-data
   - name: Set Receive Packet Steering Flow
     shell: |
-        echo 32768 > /proc/sys/net/core/rps_sock_flow_entries  
-        echo 32768 > /sys/class/net/eth0/queues/rx-0/rps_flow_cnt
+        echo 32768 > /proc/sys/net/core/rps_sock_flow_entries
+        echo 32768 > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_flow_cnt
     become: yes
     ignore_errors: yes
 
@@ -254,7 +259,7 @@
 
   - name: Disable Flow Control On Send Interface
     local_action:
-        module: shell 
+        module: shell
         _raw_params: sudo ethtool -A {{ send_interface }} autoneg off tx off rx off
         args:
             warn: false
@@ -262,8 +267,8 @@
     register: local_result
     failed_when: "'Cannot' in local_result.stderr"
     tags: generator
-    
-    
+
+
   - name: Disable Offloads on Send Interface
     local_action:
         module: shell
@@ -271,13 +276,13 @@
         args:
             warn: false
     tags: generator
-    
-    
+
+
 ##Generator Setup##
 #This assumes your ansible host is also the traffic generator. It doesnt have to be..
-- name: Prepare Traffic Generator 
+- name: Prepare Traffic Generator
   connection: local
-  gather_facts: true 
+  gather_facts: true
   hosts: localhost
 
   tasks:
@@ -287,7 +292,7 @@
       name: "{{ packages }}"
       force_apt_get: yes
     vars:
-        packages: 
+        packages:
         #this may be missing some things to build fragroute support
         #fragrout and tcpreplay-edit are needed to fix dataset pcaps that have jumbo (up to 64K) frames
         - build-essential
@@ -299,11 +304,11 @@
         - libdnet-dev
         - libdumbnet1
         - nano
-        - locate 
+        - locate
     ignore_errors: yes
     become: yes
-  
- 
+
+
   - name: Create Generator Directory
     file:
       path: "{{ generator_dir }}"
@@ -314,12 +319,13 @@
 
     ## netmap ##
   - name: Clone Latest netmap Source
-    git: 
+    git:
         repo: https://github.com/luigirizzo/netmap.git
         dest: "{{ generator_dir }}/netmap"
     register: netmap_source
+    tags: netmap
 
-    #Using this specific NIC so select it's driver manually 
+    #Using this specific NIC so select it's driver manually
     #Netmaps auto detect is flaky esp on kernel 5+
   - name: Build netmap Makefile
     shell: ./configure --select-version=igb:5.3.5.39 --driver-suffix=-netmap
@@ -328,6 +334,7 @@
       #creates: "{{ generator_dir }}/netmap/config.status"
     register: netmap_version
     when: netmap_source is changed
+    tags: netmap
 
   - name: Build netmap
     shell: make
@@ -336,6 +343,7 @@
         #creates: "{{ generator_dir }}/netmap/netmap.ko"
     register: netmap_build
     when: netmap_version is changed
+    tags: netmap
 
   - name: Install netmap
     shell: make install
@@ -344,7 +352,9 @@
     become: yes
     register: netmap_install
     when: netmap_build is changed
+    tags: netmap
 
+    #anytime the kernel is updated these modules will need rebuilt
   - name: Enable Netmap Drivers
     shell: |
      rmmod igb 2> /dev/null
@@ -353,17 +363,17 @@
      insmod {{ generator_dir }}/netmap/netmap.ko
      insmod {{ generator_dir }}/netmap/igb/igb-netmap.ko
     become: yes
-    when: netmap_install is changed
-    
+    tags: netmap
+
    ## tcpreplay ##
   - name: Clone tcpreplay Source
-    unarchive: 
+    unarchive:
         src: https://github.com/appneta/tcpreplay/releases/download/v4.3.1/tcpreplay-4.3.1.tar.xz
         dest: "{{ generator_dir }}"
         remote_src: yes
         creates: "{{ generator_dir }}/tcpreplay-4.3.1/"
     register: tcpreplay_source
-    
+
   - name: Build tcpreplay Makefile
     shell: "./configure --with-netmap={{ generator_dir }}/netmap"
     args:
@@ -371,7 +381,7 @@
       #creates: "{{ generator_dir }}/tcpreplay-4.3.1/Makefile"
     when: tcpreplay_source is changed or netmap_build is changed
     register: tcpreplay_version
-    
+
   - name: Build tcpreplay
     shell: make
     args:
@@ -379,7 +389,7 @@
       #creates: "{{ generator_dir }}/tcpreplay-4.3.1/src/tcpreplay"
     register: tcpreplay_build
     when: tcpreplay_version is changed
-      
+
   - name: Install tcpreplay
     shell: make install
     args:

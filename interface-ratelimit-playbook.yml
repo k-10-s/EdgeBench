@@ -7,8 +7,8 @@
   hosts: all
   vars: #Defaults, override with "-e"
         packet_size_max: "1500"
-        packet_size_min: "256"
-        pps_limit: "100000" 
+        packet_size_min: "1500"
+        pps_limit: "100000"
         packet_size: "512"
         num_packets: "2000000"
   tasks:
@@ -17,48 +17,50 @@
     register: capture_interface_driver
     changed_when: false
     become: yes
-  
+
   - name: Copy Performance Monitor
     copy:
       src: gather_stats.bash
       dest: "{{sensor_dir}}/gather_stats.bash"
-      mode: '0755' 
-  
-    #Location of this stat is driver dependent. Not the same everywhere
-#  - name: Gather NVIDIA Board Pre Drop Count
-#    shell: cat /sys/class/net/{{ capture_interface }}/statistics/rx_missed_errors
-#    register: pren
-#    when: "'rpi' not in group_names"
-
-#  - name: Gather RPi Board Pre Drop Count
-#    shell: ethtool -S eth0 | grep "RX Dropped Frames:" | awk '{print $4}'
-#    register: prer
-#    when: "'nvidia' not in group_names"
+      mode: '0755'
 
   - name: Launch Performance Monitor
-    shell: "bash {{sensor_dir}}/gather_stats.bash {{ pps_limit }} -1 {{ capture_interface }} 1"
+    shell: "./gather_stats.bash {{ pps_limit }} -1 {{ capture_interface }} 1"
+    args:
+      chdir: "{{ sensor_dir }}/"
     register: results_async
     poll: 0
     async: 3600
     become: yes
-
+    changed_when: false
 
   - name: Generate Traffic
     local_action:
-        module: shell 
-        _raw_params: sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -l {{ packet_size_max }} -l {{ packet_size_min }} -R {{ pps_limit }} -w 8 -zZ
+        module: shell
+        _raw_params: sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -R {{ pps_limit }} -w 8 -zZ
         warn: false
     register: sender
     tags: generate
     changed_when: false
-    async: 360
+    async: 240
     poll: 5
-    
-  - debug: 
-        var: sender.stdout    
+    ignore_errors: yes
+
+  - name: Store Generator Stats
+    local_action:
+        module: shell
+        _raw_params: |
+            echo "{{pps_limit}} --" >> "{{send_interface}}-to-{{inventory_hostname}}".log
+            echo "{{sender.stdout}}" | tail -2 >> "{{send_interface}}-to-{{inventory_hostname}}".log
+    ignore_errors: yes
+
+  - debug:
+        var: sender.stdout
 
   - name: Stop Everything
-    shell: kill "$(cat {{sensor_dir}}/gather.pid)"
+    shell: kill "$(cat gather.pid)"
+    args:
+      chdir: "{{ sensor_dir }}"
     become: yes
 
   - name: Wait for Results
@@ -67,47 +69,23 @@
     register: results
     until: results.finished
     retries: 30
-    
+    failed_when: false
+    ignore_errors: yes
+
   - name: Copy Results
     fetch:
       src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-ksoftirqd0-results-verbose.csv"
       dest: "results/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-ksoftirqd0-results-verbose.csv"
       flat: yes
+    changed_when: false
 
   - name: Copy Totals
     fetch:
       src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-ksoftirqd0-results.csv"
       dest: "results/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-ksoftirqd0-results.csv"
-      flat: yes   
-    
-  - name: Display Running Results 
-    debug: 
-        var: results.stdout    
-    
-#  - name: Gather NVIDIA Board Post Drop Count
-#    shell: cat /sys/class/net/{{ capture_interface }}/statistics/rx_missed_errors
-#    register: postn
-#    when: "'rpi' not in group_names"
+      flat: yes
+    changed_when: false
 
-#  - name: Gather RPi Board Post Drop Count
-#    shell: ethtool -S eth0 | grep "RX Dropped Frames:" | awk '{print $4}'
-#   register: postr
-#    when: "'nvidia' not in group_names"
-
-#  - name: Store NVIDIA Result
-#    local_action: shell echo "{{inventory_hostname}},{{ pps_limit }},{{num_packets|int}},{{postn.stdout|int - pren.stdout|int}}" >> pps_ratelimit_result.csv
-#    when: "'rpi' not in group_names"
-
-#  - name: Store RPi Result
-#    local_action: shell echo "{{inventory_hostname}},{{ pps_limit }},{{num_packets|int}},{{postr.stdout|int - prer.stdout|int}}" >> pps_ratelimit_result.csv
-#    when: "'nvidia' not in group_names"
-
-#  - name: NVIDIA Interface Drops
-#    debug:
-#        msg: "PPS: {{ pps_limit }} sent from {{ send_interface }} -- rx on {{ capture_interface }} Drop count before {{ pren.stdout|int }} and after {{ postn.stdout|int }} (diff {{ postn.stdout|int - pren.stdout|int }})"
-#    when: "'rpi' not in group_names"
-
-#  - name: RPi Interface Drops
-#    debug:
-#        msg: "PPS: {{ pps_limit }} sent from {{ send_interface }} -- rx on {{ capture_interface }} Drop count before {{ prer.stdout|int }} and after {{ postr.stdout|int }} (diff {{ postr.stdout|int - prer.stdout|int }})"
-#    when: "'nvidia' not in group_names"
+  - name: Display Running Results
+    debug:
+        var: results.stdout
