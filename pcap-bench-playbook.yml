@@ -16,61 +16,68 @@
   - name: Determine Capture Interface Driver
     shell: "ethtool -i {{capture_interface}} | awk 'NR == 1 {print $2}'"
     register: capture_interface_driver
-  
+    changed_when: false
+
   - name: Copy Performance Monitor
     copy:
       src: gather_stats.bash
-      dest: {{sensor_dir}}/gather_stats.bash
+      dest: "{{sensor_dir}}/gather_stats.bash"
       mode: '0755'
-  
+
   - name: Limit buffer_size
     set_fact:
         buffer_size: "{{ 700 * ansible_facts['memory_mb']['nocache']['free']|int }}" #"Free Memory is {{ ansible_facts['memory_mb']['nocache']['free'] }} so tcpdump buffer size will be: {{ 800 * ansible_facts['memory_mb']['nocache']['free']|int }} KiB"
     when:  " ansible_facts['memory_mb']['nocache']['free'] < 2048"
-
+    changed_when: false
    #disk speed is important here. Flash is almost certainly too slow at fast speeds
    #buffer size is also a variable to tune
    #/media/root/ext{{sensor_dir}}-{{ pps_limit }}.pcap
-   
-   
-   
+
   - name: Begin tcpdump #will time out after an hour
-    shell: tcpdump -i {{ capture_interface }} -B {{ buffer_size }} -n -w {{sensor_dir}}/rate_test.pcap 2> {{sensor_dir}}/counters & echo $! > {{sensor_dir}}/tcpdump.pid 
+    shell: tcpdump -i {{ capture_interface }} -B {{ buffer_size }} -n -w {{sensor_dir}}/rate_test.pcap 2> {{sensor_dir}}/counters & echo $! > {{sensor_dir}}/tcpdump.pid
     become: yes
     poll: 0
     async: 36000
-
 
   - name: Wait for Warmup
     command: /bin/sleep 8
     async: 45
     poll: 5
-
+    changed_when: false
 
   - name: Launch Performance Monitor
-    shell: bash {{sensor_dir}}/gather_stats.bash {{ pps_limit }} $(cat {{sensor_dir}}/tcpdump.pid) {{ capture_interface }} 1
+    shell: "./gather_stats.bash {{ pps_limit }} $(cat {{sensor_dir}}/tcpdump.pid) {{ capture_interface }} 1"
+    args:
+      chdir: "{{ sensor_dir }}/"
     register: results_async
     poll: 0
     async: 36000
     become: yes
-
-
+    changed_when: false
 
 #  - name: Generate Traffic
 #    local_action:
 #        module: shell sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -l {{ packet_size_max }} -l {{ packet_size_min }} -R {{ pps_limit }} -w 8 -zZ
 
-
   - name: Send Traffic via tcpreplay (Rate {{pps_limit}} pps)
     local_action:
-        module: shell 
+        module: shell
         _raw_params: sudo tcpreplay -i {{ send_interface }} --netmap -p {{ pps_limit }} -L {{num_packets}} ~/Desktop/hush/truncd.pcap  #Thursday-WorkingHours.pcap  #cic_pcap1.pcap
         warn: false
-    register: sender    
-        
-  - debug: 
-        var: sender.stdout 
-          
+    ignore_errors: yes
+    register: sender
+
+  - name: Store Generator Stats
+    local_action:
+        module: shell
+        _raw_params: |
+            echo "{{pps_limit}} --" >> "{{send_interface}}-to-{{inventory_hostname}}".log
+            echo "{{sender.stdout}}" | tail -2 >> "{{send_interface}}-to-{{inventory_hostname}}".log
+    ignore_errors: yes
+
+  - debug:
+        var: sender.stdout
+
   - name: Stop tcpdump
     shell: killall tcpdump
     become: yes
@@ -85,24 +92,26 @@
 
   - name: Copy Results
     fetch:
-      src: {{sensor_dir}}/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results-verbose.csv
+      src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results-verbose.csv"
       dest: "{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results-verbose.csv"
       flat: yes
+    changed_when: false
 
   - name: Copy Totals
     fetch:
-      src: {{sensor_dir}}/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results.csv
+      src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results.csv"
       dest: "{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-tcpdump-results.csv"
       flat: yes
-      
+    changed_when: false
+
  # - name: Scan Running Results
- #   local_action: 
- #       module: command 
- #       _raw_params: column -t -s , {{ inventory_hostname }}-tcpdump-results.csv 
+ #   local_action:
+ #       module: command
+ #       _raw_params: column -t -s , {{ inventory_hostname }}-tcpdump-results.csv
  #   register: results
 
-  - name: Display Running Results 
-    debug: 
+  - name: Display Running Results
+    debug:
         var: results.stdout
 
 #  - debug: msg="Total Packets {{num_packets}} --- Kernel drops {{ tcpdump_result.stderr_lines[3] | regex_search('\d+')  }}"

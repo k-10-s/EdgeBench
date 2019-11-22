@@ -1,17 +1,8 @@
-#########################################
-############Experiment 1#################
-
-- name: Interface Rate Limit
-  connection: ssh
-  gather_facts: false
-  hosts: all
-  vars: #Defaults, override with "-e"
-        packet_size_max: "1500"
-        packet_size_min: "1500"
-        pps_limit: "100000"
-        packet_size: "512"
-        num_packets: "2000000"
-  tasks:
+#- name: Interface Rate Limit
+#  connection: ssh
+#  gather_facts: false
+#  hosts: all
+#  tasks:
   - name: Determine Capture Interface Driver
     shell: "ethtool -i {{capture_interface}} | awk 'NR == 1 {print $2}'"
     register: capture_interface_driver
@@ -24,8 +15,8 @@
       dest: "{{sensor_dir}}/gather_stats.bash"
       mode: '0755'
 
-  - name: Launch Performance Monitor
-    shell: "./gather_stats.bash {{ pps_limit }} -1 {{ capture_interface }} 1"
+  - name: Launch Performance Monitor (Factors {{ current_factor_list }})
+    shell: "./gather_stats.bash {{ pps_limit }} -1 {{ capture_interface }} 1 {{ num_packets }} {{ current_factor_list }}"
     args:
       chdir: "{{ sensor_dir }}/"
     register: results_async
@@ -34,10 +25,10 @@
     become: yes
     changed_when: false
 
-  - name: Generate Traffic
+  - name: Generate Traffic ({{ num_packets }} packets at {{ pps_limit }} per second)
     local_action:
         module: shell
-        _raw_params: sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -R {{ pps_limit }} -w 8 -zZ
+        _raw_params: sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -R {{ pps_limit }}  -zZ
         warn: false
     register: sender
     tags: generate
@@ -62,6 +53,8 @@
     args:
       chdir: "{{ sensor_dir }}"
     become: yes
+    ignore_errors: yes
+    failed_when: false
 
   - name: Wait for Results
     async_status: jid="{{ results_async.ansible_job_id }}"

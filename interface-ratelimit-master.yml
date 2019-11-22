@@ -1,0 +1,18 @@
+- name: Interface Ratelimit Experiment
+  connection: ssh
+  hosts: all
+  vars_files: vars.yml
+  gather_facts: true
+
+  tasks:
+    - include_tasks: interface-ratelimit-control.yml
+      loop: "{{ factor_combos }}" #This will run 2^(#factors) times 
+      loop_control:
+       loop_var: current_factor_list
+       index_var: factor_idx
+
+
+    #After running 32 times... figure out the best combo?? ANOVA here? Manual Step?
+
+
+
