@@ -5,20 +5,33 @@ PPS=$1
 PID=$2
 IFACE=$3
 SAMPLE_RATE=$4
+PACKETS_EXPECTED=$5
+TUNING_FACTORS=$6
+
+TOTAL_RUNTIME=$(( $PACKETS_EXPECTED / $PPS + 2 )) #plus two for cooldown buffer
 
 if [ -z "$4" ]; then
-	echo "Usage: bash $0 <test pps rate> <monitor pid> <capture interface> <sample rate in seconds>"
-	echo "ex: bash $0 100000 8912 eth0 0.5"
+	echo "Usage: bash $0 <test pps rate> <monitor pid> <capture interface> <sample rate in sec> optional: <packets expected> <tuning_factors>"
+	echo "ex: bash $0 100000 8912 eth0 0.5 2000000 ABCD"
 	echo "a negative pid will watch only the interface / irq handler"
 	echo "**sudo access required**"
 	exit 1
+elif [ -z "$5" ]; then
+	TOTAL_RUNTIME=3600 #max hour runtime...
+	TUNING_FACTORS=N
+elif [ -z "$6" ]; then
+	TUNING_FACTORS=N
 fi
+
+
+
+
 
 cd "$(dirname "$0")"
 if [ -f gather.pid ]; then
 	echo "Unclean shutdown of previous run. Ending it now.."
 	sudo kill $(cat gather.pid)
-	sleep 3
+	sleep 2
 fi
 echo $$ > gather.pid
 tmp=$(mktemp -d)
@@ -55,7 +68,7 @@ else
 fi
 
 #let top warmup..very important. rip my 3 hours troubleshooting this regression
-sleep 3
+sleep 4
 
 sudo renice -n -15 $(pidof top) &> /dev/null #bump my top process priority
 sudo renice -n -20 $$ &> /dev/null #bump my priority to max
@@ -81,13 +94,17 @@ RX_BPS_LAST=$(cat /sys/class/net/$IFACE/statistics/rx_bytes)
 TIMEFORMAT=%R
 LOOP_COUNT=0
 LOOP_TIME_REAL=$SAMPLE_RATE
-SECONDSFORMAT=%R
+IFACE_DROPS_PERCENT=0
+KERN_DROPS_PERCENT=0
+#SUM_PACKETS=0
 
 KERN_DROP_LAST=0
-if [ "$NIC_DRIVER" == 'e1000e' ] || [ "$NIC_DRIVER" == 'igb' ] || [ "$NIC_DRIVER" == 'tg3' ] || [ "$NIC_DRIVER" == 'eqos' ] || [ "$NIC_DRIVER" == 'bcmgenet' ] ; then
+if [ "$NIC_DRIVER" == 'e1000e' ] || [ "$NIC_DRIVER" == 'igb' ] || [ "$NIC_DRIVER" == 'tg3' ] ||  [ "$NIC_DRIVER" == 'bcmgenet' ] ; then
 	IFACE_DROP_LAST=$(cat /sys/class/net/$IFACE/statistics/rx_missed_errors);
-elif [ "$NIC_DRIVER" == 'lan78xx' ] ; then
-	IFACE_DROP_LAST=$(ethtool -S $IFACE | grep "RX Dropped Frames:" | awk '{print $4}');
+elif [ "$NIC_DRIVER" == 'lan78xx' ]; then
+	IFACE_DROP_LAST=$(ethtool -S $IFACE | grep "RX Dropped Frames:" | awk '{ print $4 }');
+elif [ "$NIC_DRIVER" == 'eqos' ]; then
+	IFACE_DROP_LAST=$(ethtool -S $IFACE | grep rx_fifo_overflow | awk '{ print $2 }');
 fi
 
 function captureLap {
@@ -100,8 +117,8 @@ function captureLap {
 	RX_BPS_LAST=$RX_BPS_NOW
 
 	#Handle bizzare rare case where a negative number gets calculated on super heavily loaded machine
-	if [ ${RXBPS[$LOOP_COUNT]} -lt "0" ]; then RXBPS[$LOOP_COUNT]=0; fi
-	if [ ${RXPPS[$LOOP_COUNT]} -lt "0" ]; then RXPPS[$LOOP_COUNT]=0; fi
+	#if [ ${RXBPS[$LOOP_COUNT]} -lt "0" ]; then RXBPS[$LOOP_COUNT]=0; fi
+	#if [ ${RXPPS[$LOOP_COUNT]} -lt "0" ]; then RXPPS[$LOOP_COUNT]=0; fi
 
 	#Specific to suricata...
 	if [ "$PROCESS_NAME" == "suricata" ]; then
@@ -117,8 +134,12 @@ function captureLap {
 		IFACE_DROP_NOW=$(ethtool -S $IFACE | grep "RX Dropped Frames:" | awk '{print $4}')
 		IFACE_DROPS[$LOOP_COUNT]=$(bc <<< "scale=0; ($IFACE_DROP_NOW-$IFACE_DROP_LAST) / $LOOP_TIME_REAL  ")
 		IFACE_DROP_LAST=$IFACE_DROP_NOW
-	elif [ "$NIC_DRIVER" == 'e1000e' ] || [ "$NIC_DRIVER" == 'igb' ] || [ "$NIC_DRIVER" == 'tg3' ] || [ "$NIC_DRIVER" == 'eqos' ] || [ "$NIC_DRIVER" == 'bcmgenet' ]; then
+	elif [ "$NIC_DRIVER" == 'e1000e' ] || [ "$NIC_DRIVER" == 'igb' ] || [ "$NIC_DRIVER" == 'tg3' ] || [ "$NIC_DRIVER" == 'bcmgenet' ]; then
 		IFACE_DROP_NOW=$(cat /sys/class/net/$IFACE/statistics/rx_missed_errors)
+		IFACE_DROPS[$LOOP_COUNT]=$(bc <<< "scale=0; ($IFACE_DROP_NOW-$IFACE_DROP_LAST) / $LOOP_TIME_REAL  ")
+		IFACE_DROP_LAST=$IFACE_DROP_NOW
+	elif [ "$NIC_DRIVER" == 'eqos' ]; then
+		IFACE_DROP_NOW=$(ethtool -S $IFACE | grep rx_fifo_overflow | awk '{ print $2 }');
 		IFACE_DROPS[$LOOP_COUNT]=$(bc <<< "scale=0; ($IFACE_DROP_NOW-$IFACE_DROP_LAST) / $LOOP_TIME_REAL  ")
 		IFACE_DROP_LAST=$IFACE_DROP_NOW
 	fi
@@ -141,9 +162,6 @@ function captureLap {
 		POWER_CPU[$LOOP_COUNT]=NA
 	fi
 
-	#supress std err for now
-	exec 4>&2 2> /dev/null
-
 	#Regular sensors / reports
 	PID_MEM_PERCENT[$LOOP_COUNT]=$(ps -p $PID -o pmem --no-headers)
 	PID_MEM_MB[$LOOP_COUNT]=$(bc <<< 'scale=0; '$(ps -p $PID -o rss --no-headers)' / 976.562' )
@@ -151,9 +169,6 @@ function captureLap {
 	MEM_AVAIL_MB[$LOOP_COUNT]=$(bc <<< 'scale=0; '$(tail -5 $tmp/toptmp | head -n 1 | awk '{ print $6 + $10 }')' / 976.562' )
 	MEM_AVAIL_PERCENT[$LOOP_COUNT]=$(bc <<< "scale=1; ${MEM_AVAIL_MB[$LOOP_COUNT]} / $TOTAL_MEM_MB * 100" )
 	UTILIZATION_CPU[$LOOP_COUNT]=$(tail -6 $tmp/toptmp | head -n 1 | awk '{ print $2 + $4 + $6 + $10 + $12 + $14  }')
-
-	#return stderr to normal
-	exec 2>&4 4>&-
 
 
 	# uncomment for live debugging
@@ -187,21 +202,24 @@ function buildFinalStats {
 	if [ "$PROCESS_NAME" == "suricata" ]; then
   	SUM_KERN_DROPS=$(echo "${KERN_DROPS[*]}"|bc)
 		AVG_KERN_DROPS=$(echo "(${KERN_DROPS[*]}) / (${#KERN_DROPS[*]} - $(echo ${KERN_DROPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
+		KERN_DROPS_PERCENT=$(bc <<< "scale=2; $SUM_KERN_DROPS / $PACKETS_EXPECTED * 100")
 	elif [ "$PROCESS_NAME" == "tcpdump" ]; then
 		AVG_KERN_DROPS=NA
 		SUM_KERN_DROPS=$(cat /experiment/counters | awk ' FNR == 4 {print $1}')
+		KERN_DROPS_PERCENT=$(bc <<< "scale=3; $SUM_KERN_DROPS / $PACKETS_EXPECTED")
 		rm -rf counters
 		rm -rf tcpdump.pid
 	else
 		AVG_KERN_DROPS=NA
 		SUM_KERN_DROPS=NA
+		KERN_DROPS_PERCENT=NA
 	fi
 
-	#supress std err for now
-	exec 4>&2 2> /dev/null
 
+#	SUM_PACKETS=$(echo "${RXPPS[*]}"|bc)
 	SUM_IFACE_DROPS=$(echo "${IFACE_DROPS[*]}"|bc)
 	AVG_IFACE_DROPS=$(echo "(${IFACE_DROPS[*]}) / (${#IFACE_DROPS[*]} - $(echo ${IFACE_DROPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
+	IFACE_DROPS_PERCENT=$(bc <<< "scale=2; $SUM_IFACE_DROPS / $PACKETS_EXPECTED * 100")
 	AVG_RXPPS=$(echo "(${RXPPS[*]}) / (${#RXPPS[*]} - $(echo ${RXPPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
 	AVG_RXBPS=$(echo "(${RXBPS[*]}) / (${#RXBPS[*]} - $(echo ${RXBPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
 	AVG_PID_MEM_PERCENT=$(echo "scale=1; (${PID_MEM_PERCENT[*]}) / (${#PID_MEM_PERCENT[*]} - $(echo ${PID_MEM_PERCENT[*]} | grep -ow '0.0' | wc -l))"|bc)
@@ -211,14 +229,11 @@ function buildFinalStats {
 	AVG_UTILIZATION_CPU=$(echo "scale=1; (${UTILIZATION_CPU[*]}) / (${#UTILIZATION_CPU[*]} - $(echo ${UTILIZATION_CPU[*]} | grep -ow '0.0' | wc -l))"|bc)
 
 	unset IFS
-
-	#return stderr to normal
-	exec 2>&4 4>&-
 }
 
 function printVerboseStats {
 
-	echo "New run -- tx PPS: $PPS -- Sample rate: $4 -- Driver: $NIC_DRIVER" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results-verbose.csv
+	echo "New run -- tx PPS: $PPS -- Sample rate: $4 -- Driver: $NIC_DRIVER -- tuning factors $TUNING_FACTORS" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results-verbose.csv
 	echo "txpps,%pidcpu,%totalcpu,%pidmem,pidmemMB,memavailMB,%memavail,cpu_temp(c),cpu_power(w),rxpps,rxmbps,iface_drop,kern_drop" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results-verbose.csv
 
 	for ((i = 0; i < $LOOP_COUNT; i++ )); do
@@ -236,10 +251,15 @@ function finish {
 	printVerboseStats
 
 	if [ ! -f $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv ]; then
-		#echo "txpps,%pidcpu.avg,%pidcpu.max,%syscpu.avg,%syscpu.max,%pidmem.avg,%sysmem.max,pidmemMB.max,sysmemfree.min,temp.avg,temp.max,power.avg,power.max,rxpps.avg,rxpps.max,rxmbps.avg,rxmbps.max,nicdrop.sum,nicdrop.avg,kerndrop.sum,kerndrop.avg,rate" >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv
-		echo 'tx,pidcpu,pidcpu,syscpu,syscpu,pidmem,pidmem,pidmem,sysmemfree,sysmemfree,temp,temp,power,power,rxpps,rxpps,rxmbps,rxmbps,nicdrop,nicdrop,kerndrop,kerndrop,rate' >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv;
-		echo 'pps,%avg,%max,%avg,%max,%avg,%max,MBmax,MBmin,%min,avg(c),max(c),avg,max,avg,max,avg,max,sum,avg,sum,avg,sec' >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv;
+		echo 'tx,pidcpu,pidcpu,syscpu,syscpu,pidmem,pidmem,pidmem,sysmemfree,sysmemfree,temp,temp,power,power,rxpps,rxpps,rxmbps,rxmbps,nicdrop,nicdrop,nicdrop,kerndrop,kerndrop,factors' >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv;
+		echo 'pps,%avg,%max,%avg,%max,%avg,%max,MBmax,MBmin,%min,avg(c),max(c),avg,max,avg,max,avg,max,sum,avg,%,sum,avg,code' >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv;
 	fi
+
+	if [ ! -f COMBINED-$PROCESS_NAME-results.csv ]; then
+		echo 'device,tx,pidcpu,pidcpu,syscpu,syscpu,pidmem,pidmem,pidmem,sysmemfree,sysmemfree,temp,temp,power,power,rxpps,rxpps,rxmbps,rxmbps,nicdrop,nicdrop,nicdrop,kerndrop,kerndrop,factors' >>  COMBINED-$PROCESS_NAME-results.csv;
+		echo 'hostname,pps,%avg,%max,%avg,%max,%avg,%max,MBmax,MBmin,%min,avg(c),max(c),avg,max,avg,max,avg,max,sum,avg,%,sum,avg,code' >> COMBINED-$PROCESS_NAME-results.csv;
+	fi
+
 
 	#handle some empty cases before writing to file
 	if [ -z "$AVG_IFACE_DROPS" ]; then AVG_IFACE_DROPS=0; fi
@@ -252,33 +272,43 @@ function finish {
 	if [ ${TEMPERATURE_CPU[0]} == 'NA' ]; then AVG_TEMPERATURE_CPU=NA; MAX_TEMPERATURE_CPU=NA; fi
 	if [ ${POWER_CPU[0]} == 'NA' ]; then AVG_POWER_CPU=NA; MAX_POWER_CPU=NA; fi
 
+
+	#individual csv
 	echo $PPS,$AVG_PID_CPU_PERCENT,$MAX_PID_CPU_PERCENT,$AVG_UTILIZATION_CPU,$MAX_UTILIZATION_CPU,$AVG_PID_MEM_PERCENT,$MAX_PID_MEM_PERCENT,\
 	$MAX_PID_MEM_MB,$MIN_MEM_AVAIL_MB,$MIN_MEM_AVAIL_PERCENT,$AVG_TEMPERATURE_CPU,$MAX_TEMPERATURE_CPU,$AVG_POWER_CPU,$MAX_POWER_CPU,$AVG_RXPPS,$MAX_RXPPS,$AVG_RXBPS,\
-	$MAX_RXBPS,$SUM_IFACE_DROPS,$AVG_IFACE_DROPS,$SUM_KERN_DROPS,$AVG_KERN_DROPS,$SAMPLE_RATE >> "$HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv"
+	$MAX_RXBPS,$SUM_IFACE_DROPS,$AVG_IFACE_DROPS,$IFACE_DROPS_PERCENT,$SUM_KERN_DROPS,$AVG_KERN_DROPS, $TUNING_FACTORS >> "$HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv"
 
-	column -t -s , $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv
-	#exec 3>&1- 4>&2-
+	#combined csv
+	echo $HOSTNAME,$PPS,$AVG_PID_CPU_PERCENT,$MAX_PID_CPU_PERCENT,$AVG_UTILIZATION_CPU,$MAX_UTILIZATION_CPU,$AVG_PID_MEM_PERCENT,$MAX_PID_MEM_PERCENT,\
+	$MAX_PID_MEM_MB,$MIN_MEM_AVAIL_MB,$MIN_MEM_AVAIL_PERCENT,$AVG_TEMPERATURE_CPU,$MAX_TEMPERATURE_CPU,$AVG_POWER_CPU,$MAX_POWER_CPU,$AVG_RXPPS,$MAX_RXPPS,$AVG_RXBPS,\
+	$MAX_RXBPS,$SUM_IFACE_DROPS,$AVG_IFACE_DROPS,$IFACE_DROPS_PERCENT,$SUM_KERN_DROPS,$AVG_KERN_DROPS, $TUNING_FACTORS >> "COMBINED-$PROCESS_NAME-results.csv"
+
+	echo "Iface Drops: $SUM_IFACE_DROPS $IFACE_DROPS_PERCENT%"
+	echo "kern drops: $SUM_KERN_DROPS $KERN_DROPS_PERCENT%"
+
+	(head -n2 && tail -n1) < $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv | column -t -s ,
+	#column -t -s , $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv
+	exec 3>&1- 4>&2-
 	exit 0
 }
 
 ##"main" function below
-sleep 1 #brief warmup
+sleep 2 #brief warmup
 trap finish EXIT  #Capture ctrl-c or kill signals so I can cleanup
-#exec 3>&1 4>&2 #bash magic to get the output of the time command and save the functions stdout/stderr
+
 echo "Watching process: $PROCESS_NAME ($PID)"
 echo "I'm running on a: $DEVICE_FAM board with a $NIC_DRIVER interface "
-while [ -d /proc/$PID  ]
+echo "runtime will be $TOTAL_RUNTIME"
+SECONDS=0
+exec 3>&1 4>&2 #bash magic to get the output of the time command and save the functions stdout/stderr
+while [[ -d /proc/$PID && $SECONDS -lt $TOTAL_RUNTIME ]]
 do
-		# { time { sleep $SAMPLE_RATE & captureLap 1>&3 2>&4; wait $!; } } 2> "/$tmp/lastloop"
-		#LOOP_TIME_REAL=1 $(cat /$tmp/lastloop)
-
-		SECONDS=0
-		sleep $SAMPLE_RATE
-		captureLap
-
-		#This needs to be as close as possible to SAMPLE_RATE sec for "per second" calculations to be accurate
-		#As system load nears 100% the loop will likely drift, so try to account for it.
-		#Still not perfect, but close enough for now.
-		LOOP_TIME_REAL=$SECONDS
+	#This needs to be as close as possible to SAMPLE_RATE sec for "per second" calculations to be accurate
+	#As system load nears 100% the loop will likely drift, so try to account for it.
+	#Still not perfect, but close enough for now.
+	{ time {
+			sleep $SAMPLE_RATE & captureLap 1>&3 2>&4;
+			if [ ${RXPPS[$LOOP_COUNT-1]} -lt '10' ]; then SECONDS=0; fi #Dont start the countdown till packets start arriving. 10 accounts for random broadcasts
+			wait $!; } } 2>"$tmp/lastloop"
+	LOOP_TIME_REAL=$(cat $tmp/lastloop)
 done
-echo "Process I was watching died, wrapping up"

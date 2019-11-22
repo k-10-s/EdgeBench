@@ -11,3 +11,7 @@ results/
 netstats.sh
 
 *.log
+
+*.csv
+
+*.sh
