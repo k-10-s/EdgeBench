@@ -28,12 +28,12 @@
   - name: Generate Traffic ({{ num_packets }} packets at {{ pps_limit }} per second)
     local_action:
         module: shell
-        _raw_params: sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -R {{ pps_limit }}  -zZ
+        _raw_params: sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -R {{ pps_limit }} -l {{ packet_size_max }} -l {{ packet_size_min }} -zZ
         warn: false
     register: sender
     tags: generate
     changed_when: false
-    async: 240
+    async: 80
     poll: 5
     ignore_errors: yes
 

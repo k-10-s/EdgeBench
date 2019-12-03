@@ -1,8 +1,8 @@
 ###Master variable file for all playbooks
-           
+
 total_factors: 5
-total_combinations: 32 #2^5     
-replicates: [1,2,3,4,5,6,7,8,9,10] #whatever you want, more is better 
+total_combinations: 32 #2^5
+replicates: [1,2,3,4,5,6,7,8,9,10] #whatever you want, more is better
 
 factor_combos: [N,A,B,AB,C,AC,BC,ABC,
                 D,AD,BD,ABD,CD,ACD,BCD,ABCD,
@@ -10,17 +10,24 @@ factor_combos: [N,A,B,AB,C,AC,BC,ABC,
                 DE,ADE,BDE,ABDE,CDE,ACDE,BCDE,ABCDE]
 
 
+#Significant Factors
+#A,B,C
+#AE,CE,CD
+#ACD
+#ABCD,ACDE,BCDE
+
+
 #Factor A
 #Rx Ring size small / large
 rxring: [ min, max ]
 
-#Factor B 
+#Factor B
 #Max Kernel Backlog default / large
 backlog: [ 1000 , 8192 ]
 
 #Factor C
 #Receive Packet Steering (RPS) off / on
-rps_mask: [ 0, E ] 
+rps_mask: [ 0, E ]
 
 #Factor D
 #Receive Flow Steering (RFS) hash table size off / large
@@ -28,13 +35,12 @@ rfs_table: [ 0, 65536 ]
 
 #Factor E
 #New API (NAPI) IRQ budget default / large
-NAPI_bugdet: [ 300, 600 ]
-
+NAPI_budget: [ 300, 1200 ]
 
 
 
 ###Other possible variables###
-#Receive Flow Steering flows per RX queue 
+#Receive Flow Steering flows per RX queue
 rfs_flow_cnt: '65536'
 
 #RX_checksumming on/off
@@ -45,7 +51,7 @@ rx_checksum_status: 'on'
 #Moves timestamping of rx packets to after they enter load balanced RPS queue vs before
 rx_timestamp_status: '0'
 
-#Large Receive / Generic Receive offload on/off. 
+#Large Receive / Generic Receive offload on/off.
 #Off for suricata (breaks flow tracking?)
 lro_status: 'off'
 gro_status: 'off'
@@ -57,9 +63,7 @@ gro_status: 'off'
 #Varies based on available memory. Userspace variable...
 
 packet_size_max: "1500"
-packet_size_min: "1500"
+packet_size_min: "64"
 pps_limit: "250000"
-packet_size: "512"
-num_packets: "{{ pps_limit|int * 15 }}"
-
-
+#packet_size: "512"
+num_packets: "{{ pps_limit|int * 30 }}"
