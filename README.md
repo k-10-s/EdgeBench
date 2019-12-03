@@ -42,13 +42,13 @@ sensors:
                     ansible_user: nvidia
                     ansible_become_method: sudo
                     sensor_dir: /sensor
-			traditional:
-				hosts:
-					maas-1:
-						capture_interface: eth1
-					maas-2:
-						capture_interface: eth1
-				vars:                
+            traditional:
+                hosts:
+                    maas-1:
+                        capture_interface: eth1
+                    maas-2:
+                        capture_interface: eth1
+                vars:                
                     ansible_user: maas-user
                     ansible_become_method: sudo
                     sensor_dir: /sensor
@@ -64,8 +64,8 @@ nano /etc/hosts...
 10.0.0.3        rpi3bp
 10.0.0.4        rpi4
 10.0.0.5        xavier
-10.10.10.60		maas-1
-10.10.10.61		maas-2
+10.10.10.60     maas-1
+10.10.10.61     maas-2
 ```
 
 ### Generate some SSH keys if you don't have them already
