@@ -24,11 +24,11 @@
     async: 3600
     become: yes
     changed_when: false
-
+    
   - name: Generate Traffic ({{ num_packets }} packets at {{ pps_limit }} per second)
     local_action:
         module: shell
-        _raw_params: sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -R {{ pps_limit }} -l {{ packet_size_max }} -l {{ packet_size_min }} -zZ
+        _raw_params: sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -R {{ pps_limit }} -l {{ packet_size_max }} -l {{ packet_size_min }} -w 5 -zZ
         warn: false
     register: sender
     tags: generate
