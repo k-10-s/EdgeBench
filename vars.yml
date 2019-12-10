@@ -2,7 +2,9 @@
 
 total_factors: 5
 total_combinations: 32 #2^5
-replicates: [1,2,3,4,5,6,7,8,9,10] #whatever you want, more is better
+#replicates: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20] #must be an array like this for it to work
+
+replicates: [1,2,3]
 
 factor_combos: [N,A,B,AB,C,AC,BC,ABC,
                 D,AD,BD,ABD,CD,ACD,BCD,ABCD,
@@ -10,20 +12,13 @@ factor_combos: [N,A,B,AB,C,AC,BC,ABC,
                 DE,ADE,BDE,ABDE,CDE,ACDE,BCDE,ABCDE]
 
 
-#Significant Factors
-#A,B,C
-#AE,CE,CD
-#ACD
-#ABCD,ACDE,BCDE
-
-
 #Factor A
-#Rx Ring size small / large
-rxring: [ min, max ]
+#New API (NAPI) IRQ budget default / large
+NAPI_budget: [ 300, 1200 ]
 
 #Factor B
 #Max Kernel Backlog default / large
-backlog: [ 1000 , 8192 ]
+backlog: [ 1000 , 65536 ]
 
 #Factor C
 #Receive Packet Steering (RPS) off / on
@@ -31,21 +26,21 @@ rps_mask: [ 0, E ]
 
 #Factor D
 #Receive Flow Steering (RFS) hash table size off / large
-rfs_table: [ 0, 65536 ]
+rfs_table: [ 0, 262144 ]
 
 #Factor E
-#New API (NAPI) IRQ budget default / large
-NAPI_budget: [ 300, 1200 ]
-
+#Rx Ring size small / large
+rxring: [ min, max ]
 
 
 ###Other possible variables###
 #Receive Flow Steering flows per RX queue
-rfs_flow_cnt: '65536'
+rfs_flow_cnt: '262144'
 
 #RX_checksumming on/off
 #More research may be worthwhile here. It seemed to boost suricata when off?
-rx_checksum_status: 'on'
+#lan78xx driver on rpi3 fails to read random traffic from pkt-gen when on. probably due to UDP header / payload mismatch
+rx_checksum_status: 'off'
 
 #RX_timestamping on/off
 #Moves timestamping of rx packets to after they enter load balanced RPS queue vs before
@@ -64,6 +59,6 @@ gro_status: 'off'
 
 packet_size_max: "1500"
 packet_size_min: "64"
-pps_limit: "250000"
-#packet_size: "512"
+pps_limit: "170000"
 num_packets: "{{ pps_limit|int * 30 }}"
+num_packets_suricata: "9322025"

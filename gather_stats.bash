@@ -8,23 +8,25 @@ SAMPLE_RATE=$4
 PACKETS_EXPECTED=$5
 TUNING_FACTORS=$6
 
-TOTAL_RUNTIME=$(( $PACKETS_EXPECTED / $PPS + 2 )) #plus two for cooldown buffer
+
+#TOTAL_RUNTIME=$(( $PACKETS_EXPECTED / $PPS + 5 )) #plus for cooldown buffer
+#TOTAL_RUNTIME=60
 
 if [ -z "$4" ]; then
 	echo "Usage: bash $0 <test pps rate> <monitor pid> <capture interface> <sample rate in sec> optional: <packets expected> <tuning_factors>"
 	echo "ex: bash $0 100000 8912 eth0 0.5 2000000 ABCD"
-	echo "a negative pid will watch only the interface / irq handler"
+	echo "a negative pid will watch only the interface / softirq handler"
 	echo "**sudo access required**"
 	exit 1
 elif [ -z "$5" ]; then
-	TOTAL_RUNTIME=3600 #max hour runtime...
+	TOTAL_RUNTIME=60 
 	TUNING_FACTORS=N
 elif [ -z "$6" ]; then
+	TOTAL_RUNTIME=$(( $PACKETS_EXPECTED / $PPS + 5 )) #plus for cooldown buffer
 	TUNING_FACTORS=N
+elif [ -z "$7" ]; then
+	TOTAL_RUNTIME=$(( $PACKETS_EXPECTED / $PPS + 5 )) #plus for cooldown buffer
 fi
-
-
-
 
 
 cd "$(dirname "$0")"
@@ -61,14 +63,14 @@ else DEVICE_FAM=unknown; fi
 #debian buster has newer version of top that defaults to MB, we want KB
 if [ $(lsb_release -c -s) == 'buster' ]; then
 	top -p $PID -b -d 1 -E k > $tmp/toptmp &
-	wait 2
+	sleep 2
 else
   top -p $PID -b -d 1 > $tmp/toptmp &
 
 fi
 
 #let top warmup..very important. rip my 3 hours troubleshooting this regression
-sleep 4
+sleep 3
 
 sudo renice -n -15 $(pidof top) &> /dev/null #bump my top process priority
 sudo renice -n -20 $$ &> /dev/null #bump my priority to max
@@ -90,6 +92,7 @@ declare -a KERN_DROPS
 NIC_DRIVER=$(ethtool -i $IFACE | head -1 | awk '{ print $2 }')
 TOTAL_MEM_MB=$(bc <<< 'scale=2; '$(tail -5 $tmp/toptmp | head -n 1 | awk '{ print $4 }')' / 976.562')
 RX_PKTS_LAST=$(cat /sys/class/net/$IFACE/statistics/rx_packets)
+RX_PKTS_FIRST=$RX_PKTS_LAST
 RX_BPS_LAST=$(cat /sys/class/net/$IFACE/statistics/rx_bytes)
 TIMEFORMAT=%R
 LOOP_COUNT=0
@@ -117,11 +120,12 @@ function captureLap {
 	RX_BPS_LAST=$RX_BPS_NOW
 
 	#Handle bizzare rare case where a negative number gets calculated on super heavily loaded machine
-	#if [ ${RXBPS[$LOOP_COUNT]} -lt "0" ]; then RXBPS[$LOOP_COUNT]=0; fi
-	#if [ ${RXPPS[$LOOP_COUNT]} -lt "0" ]; then RXPPS[$LOOP_COUNT]=0; fi
+	#Happens on Pi based boards, the interface seems to temporarily "reset" its stats counters?
+	if [ ${RXBPS[$LOOP_COUNT]} -lt "0" ]; then RXBPS[$LOOP_COUNT]=0; fi
+	if [ ${RXPPS[$LOOP_COUNT]} -lt "0" ]; then RXPPS[$LOOP_COUNT]=0; fi
 
 	#Specific to suricata...
-	if [ "$PROCESS_NAME" == "suricata" ]; then
+	if [ "$PROCESS_NAME" == "Suricata-Main" ]; then
 		KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | awk '{ print $5 }'| egrep -o [0-9]+)
 		KERN_DROPS[$LOOP_COUNT]=$(bc <<< "scale=0; ($KERN_DROP_NOW - $KERN_DROP_LAST) / $LOOP_TIME_REAL  ")
 		KERN_DROP_LAST=$KERN_DROP_NOW
@@ -174,7 +178,7 @@ function captureLap {
 	# uncomment for live debugging
 	#	echo txPPS\: $PPS - \%CPU\: ${PID_CPU_PERCENT[$LOOP_COUNT]} - TOTAL CPU\: ${UTILIZATION_CPU[$LOOP_COUNT]} - \%MEM\: ${PID_MEM_PERCENT[$LOOP_COUNT]} - MEM MB\: ${PID_MEM_MB[$LOOP_COUNT]} - \
 	#	MB FREE\: ${MEM_AVAIL_MB[$LOOP_COUNT]} - TEMPERATURE_CPU\(C\)\: ${TEMPERATURE_CPU[$LOOP_COUNT]} - CPU POWER\: ${POWER_CPU[$LOOP_COUNT]} - rxPPS\: ${RXPPS[$LOOP_COUNT]} - \
-	# rxmbps\: ${RXBPS[$LOOP_COUNT]} - iface drps\: ${IFACE_DROPS[$LOOP_COUNT]}, krn drps\: ${KERN_DROPS[$LOOP_COUNT]}, loop\: $LOOP_TIME_REAL
+	#rxmbps\: ${RXBPS[$LOOP_COUNT]} - iface drps\: ${IFACE_DROPS[$LOOP_COUNT]}, krn drps\: ${KERN_DROPS[$LOOP_COUNT]}, loop\: $LOOP_TIME_REAL
 
 	(( LOOP_COUNT=LOOP_COUNT+1 ))
 }
@@ -197,16 +201,16 @@ function buildFinalStats {
 	#Averages. Have to count the number of zeros in the array so they dont throw off averages
 	#( All items in array / (Array size - zero count) )
 	IFS='+'
-
+	(( RX_PKTS_TOTAL=RX_PKTS_LAST-RX_PKTS_FIRST ))
 	#currently only suricata gives access to real time kernel drops
-	if [ "$PROCESS_NAME" == "suricata" ]; then
+	if [ "$PROCESS_NAME" == "Suricata-Main" ]; then
   	SUM_KERN_DROPS=$(echo "${KERN_DROPS[*]}"|bc)
 		AVG_KERN_DROPS=$(echo "(${KERN_DROPS[*]}) / (${#KERN_DROPS[*]} - $(echo ${KERN_DROPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
-		KERN_DROPS_PERCENT=$(bc <<< "scale=2; $SUM_KERN_DROPS / $PACKETS_EXPECTED * 100")
+		KERN_DROPS_PERCENT=$(bc <<< "scale=2; $SUM_KERN_DROPS / $RX_PKTS_TOTAL * 100")
 	elif [ "$PROCESS_NAME" == "tcpdump" ]; then
 		AVG_KERN_DROPS=NA
 		SUM_KERN_DROPS=$(cat /experiment/counters | awk ' FNR == 4 {print $1}')
-		KERN_DROPS_PERCENT=$(bc <<< "scale=3; $SUM_KERN_DROPS / $PACKETS_EXPECTED")
+		KERN_DROPS_PERCENT=$(bc <<< "scale=3; $SUM_KERN_DROPS / $RX_PKTS_TOTAL")
 		rm -rf counters
 		rm -rf tcpdump.pid
 	else
@@ -215,18 +219,18 @@ function buildFinalStats {
 		KERN_DROPS_PERCENT=NA
 	fi
 
+	
 
-#	SUM_PACKETS=$(echo "${RXPPS[*]}"|bc)
 	SUM_IFACE_DROPS=$(echo "${IFACE_DROPS[*]}"|bc)
 	AVG_IFACE_DROPS=$(echo "(${IFACE_DROPS[*]}) / (${#IFACE_DROPS[*]} - $(echo ${IFACE_DROPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
-	IFACE_DROPS_PERCENT=$(bc <<< "scale=2; $SUM_IFACE_DROPS / $PACKETS_EXPECTED * 100")
+	IFACE_DROPS_PERCENT=$(bc <<< "scale=2; $SUM_IFACE_DROPS / $RX_PKTS_TOTAL * 100")
 	AVG_RXPPS=$(echo "(${RXPPS[*]}) / (${#RXPPS[*]} - $(echo ${RXPPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
 	AVG_RXBPS=$(echo "(${RXBPS[*]}) / (${#RXBPS[*]} - $(echo ${RXBPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
-	AVG_PID_MEM_PERCENT=$(echo "scale=1; (${PID_MEM_PERCENT[*]}) / (${#PID_MEM_PERCENT[*]} - $(echo ${PID_MEM_PERCENT[*]} | grep -ow '0.0' | wc -l))"|bc)
-	AVG_PID_CPU_PERCENT=$(echo "scale=1; (${PID_CPU_PERCENT[*]}) / (${#PID_CPU_PERCENT[*]} - $(echo ${PID_CPU_PERCENT[*]} | grep -ow '0.0' | wc -l))"|bc)
-	AVG_POWER_CPU=$(echo "scale=3; (${POWER_CPU[*]}) / (${#POWER_CPU[*]} - $(echo ${POWER_CPU[*]} | grep -ow '0' | wc -l))"|bc)
-	AVG_TEMPERATURE_CPU=$(echo "scale=1; (${TEMPERATURE_CPU[*]}) / (${#TEMPERATURE_CPU[*]} - $(echo ${TEMPERATURE_CPU[*]} | grep -ow '0.0' | wc -l))"|bc)
-	AVG_UTILIZATION_CPU=$(echo "scale=1; (${UTILIZATION_CPU[*]}) / (${#UTILIZATION_CPU[*]} - $(echo ${UTILIZATION_CPU[*]} | grep -ow '0.0' | wc -l))"|bc)
+	AVG_PID_MEM_PERCENT=$(echo "scale=1; (${PID_MEM_PERCENT[*]}) / (${#PID_MEM_PERCENT[*]} - $(echo ${PID_MEM_PERCENT[*]} | grep -ow '0.0' | wc -l))"|bc 2> /dev/null)
+	AVG_PID_CPU_PERCENT=$(echo "scale=1; (${PID_CPU_PERCENT[*]}) / (${#PID_CPU_PERCENT[*]} - $(echo ${PID_CPU_PERCENT[*]} | grep -ow '0.0' | wc -l))"|bc 2> /dev/null)
+	AVG_POWER_CPU=$(echo "scale=3; (${POWER_CPU[*]}) / (${#POWER_CPU[*]} - $(echo ${POWER_CPU[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
+	AVG_TEMPERATURE_CPU=$(echo "scale=1; (${TEMPERATURE_CPU[*]}) / (${#TEMPERATURE_CPU[*]} - $(echo ${TEMPERATURE_CPU[*]} | grep -ow '0.0' | wc -l))"|bc 2> /dev/null)
+	AVG_UTILIZATION_CPU=$(echo "scale=1; (${UTILIZATION_CPU[*]}) / (${#UTILIZATION_CPU[*]} - $(echo ${UTILIZATION_CPU[*]} | grep -ow '0.0' | wc -l))"|bc 2> /dev/null)
 
 	unset IFS
 }
@@ -255,12 +259,6 @@ function finish {
 		echo 'pps,%avg,%max,%avg,%max,%avg,%max,MBmax,MBmin,%min,avg(c),max(c),avg,max,avg,max,avg,max,sum,avg,%,sum,avg,code' >> $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv;
 	fi
 
-	if [ ! -f COMBINED-$PROCESS_NAME-results.csv ]; then
-		echo 'device,tx,pidcpu,pidcpu,syscpu,syscpu,pidmem,pidmem,pidmem,sysmemfree,sysmemfree,temp,temp,power,power,rxpps,rxpps,rxmbps,rxmbps,nicdrop,nicdrop,nicdrop,kerndrop,kerndrop,factors' >>  COMBINED-$PROCESS_NAME-results.csv;
-		echo 'hostname,pps,%avg,%max,%avg,%max,%avg,%max,MBmax,MBmin,%min,avg(c),max(c),avg,max,avg,max,avg,max,sum,avg,%,sum,avg,code' >> COMBINED-$PROCESS_NAME-results.csv;
-	fi
-
-
 	#handle some empty cases before writing to file
 	if [ -z "$AVG_IFACE_DROPS" ]; then AVG_IFACE_DROPS=0; fi
 	if [ -z "$AVG_KERN_DROPS" ]; then AVG_KERN_DROPS=0; fi
@@ -272,17 +270,12 @@ function finish {
 	if [ ${TEMPERATURE_CPU[0]} == 'NA' ]; then AVG_TEMPERATURE_CPU=NA; MAX_TEMPERATURE_CPU=NA; fi
 	if [ ${POWER_CPU[0]} == 'NA' ]; then AVG_POWER_CPU=NA; MAX_POWER_CPU=NA; fi
 
-
-	#individual csv
 	echo $PPS,$AVG_PID_CPU_PERCENT,$MAX_PID_CPU_PERCENT,$AVG_UTILIZATION_CPU,$MAX_UTILIZATION_CPU,$AVG_PID_MEM_PERCENT,$MAX_PID_MEM_PERCENT,\
 	$MAX_PID_MEM_MB,$MIN_MEM_AVAIL_MB,$MIN_MEM_AVAIL_PERCENT,$AVG_TEMPERATURE_CPU,$MAX_TEMPERATURE_CPU,$AVG_POWER_CPU,$MAX_POWER_CPU,$AVG_RXPPS,$MAX_RXPPS,$AVG_RXBPS,\
-	$MAX_RXBPS,$SUM_IFACE_DROPS,$AVG_IFACE_DROPS,$IFACE_DROPS_PERCENT,$SUM_KERN_DROPS,$AVG_KERN_DROPS, $TUNING_FACTORS >> "$HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv"
+	$MAX_RXBPS,$SUM_IFACE_DROPS,$AVG_IFACE_DROPS,$IFACE_DROPS_PERCENT,$SUM_KERN_DROPS,$AVG_KERN_DROPS,$TUNING_FACTORS >> "$HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv"
 
-	#combined csv
-	echo $HOSTNAME,$PPS,$AVG_PID_CPU_PERCENT,$MAX_PID_CPU_PERCENT,$AVG_UTILIZATION_CPU,$MAX_UTILIZATION_CPU,$AVG_PID_MEM_PERCENT,$MAX_PID_MEM_PERCENT,\
-	$MAX_PID_MEM_MB,$MIN_MEM_AVAIL_MB,$MIN_MEM_AVAIL_PERCENT,$AVG_TEMPERATURE_CPU,$MAX_TEMPERATURE_CPU,$AVG_POWER_CPU,$MAX_POWER_CPU,$AVG_RXPPS,$MAX_RXPPS,$AVG_RXBPS,\
-	$MAX_RXBPS,$SUM_IFACE_DROPS,$AVG_IFACE_DROPS,$IFACE_DROPS_PERCENT,$SUM_KERN_DROPS,$AVG_KERN_DROPS, $TUNING_FACTORS >> "COMBINED-$PROCESS_NAME-results.csv"
 
+	echo "total packets: $RX_PKTS_TOTAL"
 	echo "Iface Drops: $SUM_IFACE_DROPS $IFACE_DROPS_PERCENT%"
 	echo "kern drops: $SUM_KERN_DROPS $KERN_DROPS_PERCENT%"
 
@@ -293,12 +286,12 @@ function finish {
 }
 
 ##"main" function below
-sleep 2 #brief warmup
+#sleep 2 #brief warmup
 trap finish EXIT  #Capture ctrl-c or kill signals so I can cleanup
 
 echo "Watching process: $PROCESS_NAME ($PID)"
 echo "I'm running on a: $DEVICE_FAM board with a $NIC_DRIVER interface "
-echo "runtime will be $TOTAL_RUNTIME"
+echo "runtime will be $TOTAL_RUNTIME with factors $TUNING_FACTORS"
 SECONDS=0
 exec 3>&1 4>&2 #bash magic to get the output of the time command and save the functions stdout/stderr
 while [[ -d /proc/$PID && $SECONDS -lt $TOTAL_RUNTIME ]]
