@@ -1,0 +1,43 @@
+- name: Suricata IDS Benchmark Experiment
+  connection: ssh
+  hosts: all
+  vars_files: vars.yml
+  gather_facts: true
+
+  tasks:
+    - name: Determine Capture Interface Driver
+      shell: "ethtool -i {{capture_interface}} | awk 'NR == 1 {print $2}'"
+      register: capture_interface_driver
+      changed_when: false
+      become: yes
+      when: capture_driver is not defined
+
+    - name: Set Capture Driver Fact
+      set_fact:
+        capture_driver: "{{capture_interface_driver.stdout_lines[0]}}"
+        cacheable: yes
+  
+    - include_tasks: suricata-benchmark-control.yml
+      loop: "{{ factor_combos }}" #This will run 2^(#factors) times 
+      loop_control:
+       loop_var: current_factor_list
+       index_var: factor_idx
+      tags: discover
+
+    - name: Run Initial ANOVA Test
+      local_action:
+        module: shell
+        _raw_params: |
+            python anova.py ""results/{{inventory_hostname}}-{{capture_driver}}-suricata-results.csv" kerndrop {{total_factors}} {{replicates.len}} {{inventory_hostname}}""
+      register: anova
+      tags: anova
+      ignore_errors: yes
+      changed_when: false 
+    
+    - debug:
+       var: anova.stdout
+       tags: anova
+ 
+
+
+
