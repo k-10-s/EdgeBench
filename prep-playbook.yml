@@ -190,9 +190,30 @@
         - libdumbnet1
         - nano
         - locate
+        - docker.io
     ignore_errors: yes
     become: yes
 
+  - name: Enable Docker Usage
+    shell: |
+        sudo usermod -aG docker $USER
+        docker network create experiment
+    become: yes
+    ignore_errors: yes
+  
+  - name: Grab required Python packages
+    pip:
+        name:
+        - matplotlib 
+        - pandas 
+        - scipy 
+        - numpy 
+        - researchpy 
+        - seaborn 
+        - probscale 
+        - statsmodels 
+        - pytest
+        become: yes
 
   - name: Create Generator Directory
     file:
@@ -281,3 +302,19 @@
       chdir: "{{ generator_dir }}/tcpreplay-4.3.1/"
     become: yes
     when: tcpreplay_version is changed
+    
+  - name: Pull Elasticsearch Docker Image
+    docker_container:
+        name: elastic
+        pull: elasticsearch:7.5.0
+    
+  - name: Pull Kibana Docker Image
+    docker_container:
+        name: kibana
+        pull: kibana:7.5.0
+    
+    
+    
+    
+#   docker run -d --name kibana --net experiment -p 5601:5601 kibana:7.5.0
+#    docker run -d --name elasticsearch --net experiment -p 9200:9200 -p 9300:9300 -e "discovery.type=single-node" elasticsearch:7.5.0
