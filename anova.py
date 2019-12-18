@@ -18,7 +18,6 @@ import sys
 #ANOVA
 #Thanks to Marvin for Python help
 
-
 if len(sys.argv) <= 5:
 	print("Not enough args usage: anova.py <*.csv> <rv> <factors> <replicates> <alpha> optional: device")
 	print("ex: anova.py testdata.csv nicdrop 5 10 .05 TX1")
@@ -38,9 +37,9 @@ if k > 5 or k < 1:
 
 
 data2 = pd.read_csv(sys.argv[1], header=[0,1])
-data2 = pd.read_csv(sys.argv[1], header=[0,1])
 response_var = data2[[rv,'factors']]
 response_var.columns = response_var.columns.get_level_values(1)
+#print(response_var.groupby('code').mean().sort_values(by=['avg']).round(0))
 
 if(k >= 1):
 	df_index=['A', 'Error', 'Total']
@@ -262,32 +261,48 @@ print("Unoptimized Mean: " + str(np.mean(one)))
 print(anova_df_pandas.round(5))
 
 ##Significant Factors Only
-print("\nSignificant Factors (alpha = " + str(alpha) + ")")
 significant_factors = anova_df_pandas[(anova_df_pandas['p-value'] < alpha)].round(5)
-
-#Only want negative (good) effects
-print(significant_factors[(significant_factors['Effect Est.'] < 0)].sort_values(by=['Sample Mean']))
-candidiate_factors = significant_factors[(significant_factors['Effect Est.'] < 0)].sort_values(by=['Sample Mean'])#.index.to_numpy()
-
-#It better be less then the unoptimized mean...
-candidiate_factors = candidiate_factors[(candidiate_factors['Sample Mean'] < np.mean(one))].sort_values(by=['Sample Mean']).index.to_numpy()
-
+candidiate_factors = significant_factors[(significant_factors['Effect Est.'] < 0)].sort_values(by=['Sample Mean'])
 longest = ""
-for x in candidiate_factors:
-	if len(x) > len(longest):
-		longest = x
 
-if len(longest) == 0:
-	print("\n ***No statistically significant effects***")
-	
-	#Take the factor combo with the best sample mean and keep trying
-	print("\nNext best guesses")
-	print(anova_df_pandas[(anova_df_pandas['Sample Mean'] < np.mean(one))].sort_values(by=['Sample Mean']).index.to_numpy())
-	print(anova_df_pandas[(anova_df_pandas['Sample Mean'] < np.mean(one))].sort_values(by=['Sample Mean']).index.to_numpy()[0])
-	
+if candidiate_factors.empty == False:
+	print("\nSignificant Factors (alpha = " + str(alpha) + ")")
+	#Only want negative (good) effects
+	print(significant_factors[(significant_factors['Effect Est.'] < 0)].sort_values(by=['Sample Mean']))
+	#It better be less then the unoptimized mean...
+	candidiate_factors_index = candidiate_factors[(candidiate_factors['Sample Mean'] < np.mean(one))].sort_values(by=['Sample Mean']).index.array
+
+	for x in candidiate_factors_index:
+		if len(x) > len(longest):
+			longest = x
+
+	print("\n!!--Statistically Significant Effects--!! ")
+	all = ""
+	for y in candidiate_factors_index:
+		all = all + y + ","
+	print("Lowest observed mean (target to beat)")
+	print(int(significant_factors['Sample Mean'].min()))
+	print("Effects")
+
 else:
-	print("!!--Statistically Significant Effects--!! ")
-	print(longest)
+	print("\n ***No statistically significant effects with sample mean < unoptimized mean***\n")
+	candidiate_factors_index = anova_df_pandas[(anova_df_pandas['Sample Mean'] < np.mean(one))].sort_values(by=['Sample Mean']).index.array
+
+	all = ""
+	for y in candidiate_factors_index:
+		all = all + y + ","
+
+	if len(all) == 0:
+		print("All the factors made it worse")
+		print("NONE")
+		exit()
+
+	#Take the factor combo with the best sample mean and keep trying
+	print("Lowest observed sample mean (target to beat)")
+	print(int(anova_df_pandas[(anova_df_pandas['Sample Mean'] < np.mean(one))]['Sample Mean'].min()))
+	print("Next best guesses")
+
+print(all.rstrip(','))
 
 #Normplot of effects
 if len(sys.argv) == 7:
