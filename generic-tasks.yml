@@ -1,0 +1,47 @@
+  - name: Launch Performance Monitor (Factors {{ current_factor_list }})
+    shell: "./gather_stats.bash <<**PID**>> <<**SAMPLE RATE**>> {{ current_factor_list }}"
+    args:
+      chdir: "{{ experiment_dir }}/"
+    register: results_async
+    poll: 0
+    async: 3600
+    become: yes
+    changed_when: false
+
+   # <<**YOUR WORKLOAD TASK(S) GOES HERE.....**>>
+   #       SEE RATELIMIT TEST FOR EXAMPLE
+
+  - name: Stop Everything
+    shell: kill "$(cat gather.pid)"
+    args:
+      chdir: "{{ experiment_dir }}"
+    become: yes
+    ignore_errors: yes
+    failed_when: false
+
+  - name: Wait for Results
+    async_status: jid="{{ results_async.ansible_job_id }}"
+    become: yes
+    register: results
+    until: results.finished
+    retries: 30
+    failed_when: false
+    ignore_errors: yes
+
+  - name: Copy Results
+    fetch:
+      src: "{{experiment_dir}}/{{ inventory_hostname }}-results-verbose.csv"
+      dest: "results/{{ inventory_hostname }}-results-run{{test_counter}}-verbose.csv"
+      flat: yes
+    changed_when: false
+
+  - name: Copy Totals
+    fetch:
+      src: "{{experiment_dir}}/{{ inventory_hostname }}-results.csv"
+      dest: "results/{{ inventory_hostname }}-results-run{{test_counter}}.csv"
+      flat: yes
+    changed_when: false
+
+  - name: Display Running Results
+    debug:
+        var: results.stdout

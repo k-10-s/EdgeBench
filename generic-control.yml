@@ -1,0 +1,45 @@
+
+- name: Reboot to Defaults. Run {{ansible_loop.index}} of {{ansible_loop.length}}
+  reboot:
+  become: yes
+  tags: discover
+
+- name: Set Static Controls
+  include_tasks: static-controls.yml
+
+- name: Set Variable Factor Controls
+  include_tasks: variable-controls.yml
+
+- name: Copy Performance Monitor
+  copy:
+    src: gather_stats.bash
+    dest: "{{experiment_dir}}/gather_stats.bash"
+    mode: '0755'
+
+  #-run replicates
+- name: Begin Workload Tasks
+  include_tasks: generic-tasks.yml
+  loop: "{{ replicates }}"
+  loop_control:
+    extended: yes
+    loop_var: inner_counter
+    index_var: inner_idx
+  tags: discover
+
+- name: End of Run ANOVA Test
+  local_action:
+    module: shell
+    _raw_params: |
+        python anova.py 'results/{{ inventory_hostname }}-results-run{{test_counter}}.csv' <<**RESPONSE VARIABLE**>> "{{total_factors}}" "{{replicates|length}}" 0.05
+  register: anova
+  tags: anova
+  when: "ansible_loop.revindex == 1 and test_counter > 1"
+  changed_when: false
+  ignore_errors: yes
+
+- name: Update Last Loop Best
+  set_fact:
+   last_loop_best: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
+
+- debug:
+    msg: "Last Loops Best: {{last_loop_best}}"

@@ -1,0 +1,81 @@
+- name: Generic Experiment Template
+  connection: ssh
+  hosts: all
+  vars_files: vars.yml
+  gather_facts: true
+
+  tasks:
+    - name: Begin Primary Test Control
+      include_tasks: generic-control.yml
+      loop: "{{ factor_combos }}" #This will run 2^(#factors) times
+      loop_control:
+       loop_var: current_factor_list
+       index_var: factor_idx
+       extended: yes
+      when: "test_counter == 1"
+      tags:
+        - discover
+        - initial
+
+    - name: Run Initial ANOVA Test
+      local_action:
+        module: shell
+        _raw_params: |
+            python anova.py 'results/{{ inventory_hostname }}-results-run1.csv' <<**RESPONSE VARIABLE**>> "{{total_factors}}" "{{replicates|length}}" 0.05
+      register: anova
+      tags: anova
+      ignore_errors: yes
+      changed_when: false
+      when: "test_counter == 1"
+
+    - name: Set Significant Factors
+      set_fact:
+         significant_factors: "{{anova.stdout_lines[anova.stdout_lines|length -1].split(\",\")}}"
+         target_to_beat: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
+         cacheable: yes
+      when: "test_counter == 1"
+
+    - name: Significant Factors
+      debug:
+        var: significant_factors
+
+    - name: Increment Test Counter
+      set_fact:
+         test_counter: "{{ test_counter | int + 1 }}"
+
+    - name: Clean Up old Results
+      shell: |
+          rm -rf {{ experiment_dir }}/*.csv
+          rm -rf {{ experiment_dir }}/*.pid
+          rm -rf counters
+      args:
+          warn: false
+      become: yes
+
+    - name: Continue Feedback Loop. Target to Beat "{{target_to_beat}}"
+      include_tasks: generic-control.yml
+      loop: "{{significant_factors}}"
+      loop_control:
+        extended: yes
+        loop_var: current_factor_list
+        index_var: inner_index
+
+    - name: Check Last Loop Results
+      block:
+        - name: Looking for Improvements...
+          fail:
+            msg: "Still room to improve"
+          when: "last_loop_best < target_to_beat"
+
+      rescue:
+        - name: Update Target to Beat
+          set_fact:
+             target_to_beat: "{{last_loop_best}}"
+
+        - name: Begin New Round
+          include_tasks: generic-master.yml
+
+    - name: Store Final Result
+      set_fact:
+        discovered_best: "{{last_loop_best}}"
+        cacheable: yes
