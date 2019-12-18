@@ -1,0 +1,55 @@
+  ###Blanket Optimizations (always apply to all)
+  
+- name: Set Receive Offloads
+  command: "ethtool -K {{ capture_interface }} lro {{ lro_status }} gro {{ gro_status }} rx {{ rx_checksum_status }}"
+  become: yes
+
+- name: Enable Capture Interface and Set Promiscuous
+  shell: |
+    ifconfig {{ capture_interface }} promisc
+    ifconfig {{ capture_interface }} up
+  become: yes
+
+  #Multiple rx queues dont make much sense on small boards where the IRQs cant be remapped
+  #the SMP affinity for all of them hits the same core, making it worse
+- name: Limit Number of Hardware Queues
+  shell: ethtool -L {{capture_interface}} rx 1
+  become: yes
+  ignore_errors: yes
+  register: queues_result
+  failed_when: "'Invalid argument' in queues_result.stderr"
+
+  #When Disk I/O is very important. Also lifetime of flash...
+- name: Disable swap on RPis
+  shell: swapoff -a
+  become: yes
+  when: "'nvidia' not in group_names"
+
+- name: Bump RPi Throttling Temp (3B+ only)
+  lineinfile:
+    path: /boot/config.txt
+    regex: "temp_soft_limit="
+    line: temp_soft_limit=70.0
+  when: "'nvidia' not in group_names"
+  become: yes
+
+- name: Disable Flow Control On Send Interface
+  local_action:
+      module: shell
+      _raw_params: sudo ethtool -A {{ send_interface }} autoneg off tx off rx off
+      args:
+          warn: false
+  #ignore_errors: yes
+  register: local_result
+  failed_when: "'Cannot' in local_result.stderr"
+
+- name: Disable Offloads on Send Interface
+  local_action:
+      module: shell
+      _raw_params: "sudo ethtool -K {{ send_interface }} gso off tso off gro off lro off tx off"
+      args:
+          warn: false
+
+- name: Set RX Packet Timestamping
+  shell: sysctl -w net.core.netdev_tstamp_prequeue={{ rx_timestamp_status }}
+  become: yes

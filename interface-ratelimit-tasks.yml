@@ -3,17 +3,6 @@
 #  gather_facts: false
 #  hosts: all
 #  tasks:
-  - name: Determine Capture Interface Driver
-    shell: "ethtool -i {{capture_interface}} | awk 'NR == 1 {print $2}'"
-    register: capture_interface_driver
-    changed_when: false
-    become: yes
-
-  - name: Copy Performance Monitor
-    copy:
-      src: gather_stats.bash
-      dest: "{{sensor_dir}}/gather_stats.bash"
-      mode: '0755'
 
   - name: Launch Performance Monitor (Factors {{ current_factor_list }})
     shell: "./gather_stats.bash {{ pps_limit }} -1 {{ capture_interface }} 1 {{ num_packets }} {{ current_factor_list }}"
@@ -24,8 +13,8 @@
     async: 3600
     become: yes
     changed_when: false
-    
-  - name: Generate Traffic ({{ num_packets }} packets at {{ pps_limit }} per second)
+
+  - name: Generate Traffic ({{ num_packets }} packets at {{ pps_limit }} per second. Run {{ansible_loop.index}} of {{ansible_loop.length}})
     local_action:
         module: shell
         _raw_params: sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -R {{ pps_limit }} -l {{ packet_size_max }} -l {{ packet_size_min }} -w 5 -zZ
@@ -67,15 +56,15 @@
 
   - name: Copy Results
     fetch:
-      src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-ksoftirqd0-results-verbose.csv"
-      dest: "results/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-ksoftirqd0-results-verbose.csv"
+      src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-verbose.csv"
+      dest: "results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run{{test_counter}}-verbose.csv"
       flat: yes
     changed_when: false
 
   - name: Copy Totals
     fetch:
-      src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-ksoftirqd0-results.csv"
-      dest: "results/{{ inventory_hostname }}-{{capture_interface_driver.stdout_lines[0]}}-ksoftirqd0-results.csv"
+      src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results.csv"
+      dest: "results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run{{test_counter}}.csv"
       flat: yes
     changed_when: false
 

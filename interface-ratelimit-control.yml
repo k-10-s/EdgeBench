@@ -1,132 +1,50 @@
 
-- name: Reboot to Defaults
+- name: Reboot to Defaults. Run {{ansible_loop.index}} of {{ansible_loop.length}}
   reboot:
   become: yes
+  tags: discover
 
-  ###Blanket Optimizations (always apply to all)
-- name: Set Receive Offloads
-  command: "ethtool -K {{ capture_interface }} lro {{ lro_status }} gro {{ gro_status }} rx {{ rx_checksum_status }}"
-  become: yes
+- name: Set Static Controls
+  include_tasks: static-controls.yml
 
-- name: Enable Capture Interface and Set Promiscuous
-  shell: |
-    ifconfig {{ capture_interface }} promisc
-    ifconfig {{ capture_interface }} up
-  become: yes
+- name: Set Variable Factor Controls
+  include_tasks: variable-controls.yml
 
-  #Multiple rx queues dont make much sense on small boards where the IRQs cant be remapped
-  #the SMP affinity for all of them hits the same core, making it worse
-- name: Limit Number of Hardware Queues
-  shell: ethtool -L {{capture_interface}} rx 1
-  become: yes
-  ignore_errors: yes
-  register: queues_result
-  failed_when: "'Invalid argument' in queues_result.stderr"
-
-  #When Disk I/O is very important. Also lifetime of flash...
-- name: Disable swap on RPis
-  shell: swapoff -a
-  become: yes
-  when: "'nvidia' not in group_names"
-
-- name: Bump RPi Throttling Temp (3B+ only)
-  lineinfile:
-    path: /boot/config.txt
-    regex: "temp_soft_limit="
-    line: temp_soft_limit=70.0
-  when: "'nvidia' not in group_names"
-  become: yes
-
-- name: Disable Flow Control On Send Interface
-  local_action:
-      module: shell
-      _raw_params: sudo ethtool -A {{ send_interface }} autoneg off tx off rx off
-      args:
-          warn: false
-  #ignore_errors: yes
-  register: local_result
-  failed_when: "'Cannot' in local_result.stderr"
-
-- name: Disable Offloads on Send Interface
-  local_action:
-      module: shell
-      _raw_params: "sudo ethtool -K {{ send_interface }} gso off tso off gro off lro off tx off"
-      args:
-          warn: false
-
-- name: Set RX Packet Timestamping
-  shell: sysctl -w net.core.netdev_tstamp_prequeue={{ rx_timestamp_status }}
-  become: yes
-
- ##FACTORS UNDER EXPERIMENT
-  ###FACTOR A###
-  #You can adjust the net_rx_action budget, which determines how much packet processing can be spent
-  #among all NAPI structures registered to a CPU by setting a sysctl value named net.core.netdev_budget.
-- name: Increase NAPI Budget
-  shell: sysctl -w net.core.netdev_budget={{NAPI_budget[1]}}
-  become: yes
-  when: "'A' in current_factor_list"
-
-  ###FACTOR B###
-  #https://community.mellanox.com/s/article/linux-sysctl-tuning
-  #https://blog.packagecloud.io/eng/2016/06/22/monitoring-tuning-linux-networking-stack-receiving-data/
-- name: Set Kernel Max Backlog
-  shell: sysctl -w net.core.netdev_max_backlog={{backlog[1]}}
-  become: yes
-  when: "'B' in current_factor_list"
-
-  ###FACTOR C###
-  #https://www.kernel.org/doc/Documentation/networking/scaling.txt
-  #http://christophe.vandeplas.com/2013/11/suricata-capturekerneldrops-caused-by.html
-  #Has some bugs. Probably a better way. Doesnt seem to apply much to ARM boards
-#- name: Determine CPU serving NIC Interrupts
-#  shell: cat /proc/interrupts | grep -oP "\d+:\s+\K(.+)(?={{capture_interface}})" | tr -s [:space:] "\n" | head -$(grep -c ^processor /proc/cpuinfo) | cat -n | sort -k2rn | head -1 | cut -b5-6
-#  register: irq_affinity
-#  changed_when: false
-#  when: "'C' in current_factor_list" 
-
-- name: Enable / Set Receive Packet Steering Affinity
-  #shell: "echo {{ bitmasks[irq_affinity.stdout_lines|int] }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
-  #All the ARM boards tested so far use CPU0 for interrupts (the cpu that booted the kernel)
-  shell: "echo {{ rps_mask[1] }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
-  become: yes
-  ignore_errors: yes
-  when: "'C' in current_factor_list"
-
-
-  ###FACTOR D###
-  #https://blog.packagecloud.io/eng/2016/06/22/monitoring-tuning-linux-networking-stack-receiving-data
-  #Receive flow steering (RFS) is used in conjunction with RPS. RPS attempts to distribute incoming packet load amongst multiple CPUs,
-  #but does not take into account any data locality issues for maximizing CPU cache hit rates.
-  #You can use RFS to help increase cache hit rates by directing packets for the same flow to the same CPU for processing.
-
-  ##RFS keeps track of a global hash table of all flows and the size of this hash table can be adjusted by setting the net.core.rps_sock_flow_entries sysctl.
-  ##You can also set the number of flows per RX queue by writing this value to the sysfs file named rps_flow_cnt for each RX queue.
-- name: Set Receive Flow Steering (RFS)
-  shell: |
-    sysctl -w net.core.rps_sock_flow_entries="{{ rfs_table[1] }}"
-    echo "{{ rfs_flow_cnt }}" > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_flow_cnt
-  become: yes
-  ignore_errors: yes
-  when: "'D' in current_factor_list"
-
-  ###FACTOR E###
-  #This appears to be set very low by default for legacy compatibility?
-  #Can set them larger since we dont care as much about latency
-  #rpi drivers dont support this so they are only 4 factors
-- name: Set Rx-Ring Size to Pre-set Maximums
-  shell: "ethtool -G {{capture_interface}} rx $(ethtool -g {{capture_interface}} | grep RX: | head -1 | awk '{print $2}')"
-  become: yes
-  ignore_errors: yes
-  register: ring_result
-  failed_when: "'Operation not supported' in ring_result.stderr"
-  when: "'E' in current_factor_list and 'rpi' not in group_names"
-
+- name: Copy Performance Monitor
+  copy:
+    src: gather_stats.bash
+    dest: "{{sensor_dir}}/gather_stats.bash"
+    mode: '0755'
 
   #-run replicates
-- include_tasks: interface-ratelimit-tasks.yml
+- name: Begin Interface Ratelimit Benchmark
+  include_tasks: interface-ratelimit-tasks.yml
   loop: "{{ replicates }}"
   loop_control:
+    extended: yes
     loop_var: inner_counter
     index_var: inner_idx
+  tags: discover
 
+
+- name: End of Run ANOVA Test
+  local_action:
+    module: shell
+    _raw_params: |
+        python anova.py 'results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run{{test_counter}}.csv' nicdrop "{{total_factors}}" "{{replicates|length}}" 0.05
+  register: anova
+  tags: anova
+  when: "ansible_loop.revindex == 1 and test_counter > 1"
+  changed_when: false
+  ignore_errors: yes
+
+
+- name: Update Last Loop Best
+  set_fact:
+   last_loop_best: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
+   #discovered_pps_limit: "{{pps_limit|int - target_to_beat}}"
+   #cacheable: yes
+
+
+- debug:
+    msg: "Last Loops Best: {{last_loop_best}}"

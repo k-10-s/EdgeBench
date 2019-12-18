@@ -2,9 +2,8 @@
 
 total_factors: 5
 total_combinations: 32 #2^5
-#replicates: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20] #must be an array like this for it to work
-
-replicates: [1,2,3]
+replicates: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20] #must be an array like this for it to work
+#replicates: [1,2,3]
 
 factor_combos: [N,A,B,AB,C,AC,BC,ABC,
                 D,AD,BD,ABD,CD,ACD,BCD,ABCD,
@@ -62,3 +61,4 @@ packet_size_min: "64"
 pps_limit: "170000"
 num_packets: "{{ pps_limit|int * 30 }}"
 num_packets_suricata: "9322025"
+test_counter: 1

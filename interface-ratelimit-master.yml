@@ -16,30 +16,92 @@
       set_fact:
         capture_driver: "{{capture_interface_driver.stdout_lines[0]}}"
         cacheable: yes
+      when: capture_driver is not defined
       
-    - include_tasks: interface-ratelimit-control.yml
+      #Rpis dont have a factor E currently
+    - name: Limit RPi Factors
+      set_fact:
+        total_factors: 4
+      when: "'rpi' in group_names and test_counter == 1" 
+
+    - name: Begin Primary Test Control
+      include_tasks: interface-ratelimit-control.yml
       loop: "{{ factor_combos }}" #This will run 2^(#factors) times 
       loop_control:
        loop_var: current_factor_list
        index_var: factor_idx
-      tags: discover
-       
-    - name: Store Final Result 
-      set_fact:
-        discovered_pps_limit: 99999
-        cacheable: yes
+       extended: yes
+      when: "test_counter == 1" 
+      tags: 
+        - discover
+        - initial
 
     - name: Run Initial ANOVA Test
       local_action:
         module: shell
         _raw_params: |
-            python anova.py 'results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results.csv' nicdrop "{{total_factors}}" "{{replicates|length}}" 0.05 "{{inventory_hostname}}"
+            python anova.py 'results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run1.csv' nicdrop "{{total_factors}}" "{{replicates|length}}" 0.05 
       register: anova
       tags: anova
       ignore_errors: yes
       changed_when: false 
+      when: "test_counter == 1" 
       
-    - debug:
-        var: anova.stdout
-        tags: anova
+    - name: Set Significant Factors
+      set_fact:
+         significant_factors: "{{anova.stdout_lines[anova.stdout_lines|length -1].split(\",\")}}"
+         target_to_beat: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
+         #discovered_pps_limit: "{{pps_limit|int - target_to_beat}}"
+         cacheable: yes
+      when: "test_counter == 1" 
+           
+    - name: Significant Factors
+      debug:
+        var: significant_factors
+     
+    
+    - name: Increment Test Counter
+      set_fact:
+         test_counter: "{{ test_counter | int + 1 }}"
+         
+    - name: Clean Up old Results
+      shell: |
+          rm -rf {{ sensor_dir }}/*.csv
+          rm -rf {{ sensor_dir }}/*.pid
+          rm -rf counters
+      args:
+          warn: false
+      become: yes
+            
+    - name: Continue Feedback Loop. Target to Beat "{{target_to_beat}}"
+      include_tasks: interface-ratelimit-control.yml
+      loop: "{{significant_factors}}" 
+      loop_control:
+        extended: yes
+        loop_var: current_factor_list
+        index_var: inner_index
+        
+    - name: Keep Going
+      block:
+        - name: check last loop 
+          fail: 
+            msg: "Still room to improve"
+          when: "last_loop_best < target_to_beat"
+        
+      rescue:
+        - name: Update Target to Beat
+          set_fact:
+             target_to_beat: "{{last_loop_best}}"
+    
+        - include_tasks: interface-ratelimit-master.yml
+        
+             
+                   
+                   
+                   
+    - name: Store Final Result 
+      set_fact:
+        discovered_pps_limit: "{{last_loop_best}}"
+        cacheable: yes  
+
 
