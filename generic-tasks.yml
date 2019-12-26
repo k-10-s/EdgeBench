@@ -1,3 +1,4 @@
+#This playbook is the "inner" loop
   - name: Launch Performance Monitor (Factors {{ current_factor_list }})
     shell: "./gather_stats.bash <<**PID**>> <<**SAMPLE RATE**>> {{ current_factor_list }}"
     args:

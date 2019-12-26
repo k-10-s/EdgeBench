@@ -1,3 +1,4 @@
+#This playbook acts as the "main" function
 - name: Generic Experiment Template
   connection: ssh
   hosts: all
@@ -5,7 +6,7 @@
   gather_facts: true
 
   tasks:
-    - name: Begin Primary Test Control
+    - name: Begin First Outer Loop
       include_tasks: generic-control.yml
       loop: "{{ factor_combos }}" #This will run 2^(#factors) times
       loop_control:
@@ -52,7 +53,7 @@
           warn: false
       become: yes
 
-    - name: Continue Feedback Loop. Target to Beat "{{target_to_beat}}"
+    - name: Continue Outer Loop. Target to Beat "{{target_to_beat}}"
       include_tasks: generic-control.yml
       loop: "{{significant_factors}}"
       loop_control:
@@ -65,13 +66,13 @@
         - name: Looking for Improvements...
           fail:
             msg: "Still room to improve"
-          when: "last_loop_best < target_to_beat"
-
+          when: "last_loop_best < target_to_beat" #Determine what "better" means here
       rescue:
         - name: Update Target to Beat
           set_fact:
              target_to_beat: "{{last_loop_best}}"
 
+        #Recursively call self to keep going
         - name: Begin New Round
           include_tasks: generic-master.yml
 

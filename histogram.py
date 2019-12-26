@@ -11,9 +11,9 @@ import statsmodels.stats.multicomp
 import probscale
 import sys
 
-if len(sys.argv) <= 2: 
+if len(sys.argv) <= 2:
 	print("Not enough args usage: histogram.py *.csv device")
-	exit() 
+	exit()
 
 #Histogram 1
 data = pd.read_csv(sys.argv[1], header=[0,1])
@@ -21,7 +21,7 @@ histogram_data_filtered = data['nicdrop','avg'].to_numpy()
 
 plt.subplot(1,2,1)
 num_bins = 15
-mu = np.mean(histogram_data_filtered) #mean 
+mu = np.mean(histogram_data_filtered) #mean
 sigma = np.std(histogram_data_filtered) #stddev
 n, bins, patches = plt.hist(histogram_data_filtered, num_bins, density=1, facecolor='blue')
 # add a 'best fit' line

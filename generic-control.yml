@@ -1,8 +1,11 @@
-
+#This playbook is the "outer" loop 
 - name: Reboot to Defaults. Run {{ansible_loop.index}} of {{ansible_loop.length}}
   reboot:
   become: yes
   tags: discover
+
+  #If any configuration changes are not undone with a reboot,
+  #add a playbook here to manually "revert" them
 
 - name: Set Static Controls
   include_tasks: static-controls.yml
@@ -17,7 +20,7 @@
     mode: '0755'
 
   #-run replicates
-- name: Begin Workload Tasks
+- name: Begin Inner Loop
   include_tasks: generic-tasks.yml
   loop: "{{ replicates }}"
   loop_control:
@@ -33,6 +36,7 @@
         python anova.py 'results/{{ inventory_hostname }}-results-run{{test_counter}}.csv' <<**RESPONSE VARIABLE**>> "{{total_factors}}" "{{replicates|length}}" 0.05
   register: anova
   tags: anova
+  #if the last item in loop and not inital run
   when: "ansible_loop.revindex == 1 and test_counter > 1"
   changed_when: false
   ignore_errors: yes
