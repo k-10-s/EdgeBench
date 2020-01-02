@@ -1,0 +1,45 @@
+- name: Interface Ratelimit Experiment
+  connection: ssh
+  hosts: all
+  vars_files: vars.yml
+  gather_facts: true
+
+  tasks:
+    - name: Determine Capture Interface Driver
+      shell: "ethtool -i {{capture_interface}} | awk 'NR == 1 {print $2}'"
+      register: capture_interface_driver
+      changed_when: false
+      become: yes
+      when: capture_driver is not defined
+
+    - name: Set Capture Driver Fact
+      set_fact:
+        capture_driver: "{{capture_interface_driver.stdout_lines[0]}}"
+        cacheable: yes
+      when: capture_driver is not defined
+
+    - name: Clean Up old Results
+      shell: |
+          rm -rf {{ sensor_dir }}/*.csv
+          rm -rf {{ sensor_dir }}/*.pid
+          rm -rf counters
+      args:
+          warn: false
+      become: yes
+      
+    - name: Clear gathered facts from all currently targeted hosts
+      meta: clear_facts
+      
+      
+    - name: Begin New Test
+      include_tasks: interface-ratelimit-master.yml
+
+
+    - name: Done Looping, Store Final Result
+      set_fact:
+        discovered_pps_limit: "{{pps_limit|int - target_to_beat|int}}"
+        #cacheable: yes
+
+    - name: Final Result
+      debug:
+        msg: "PPS Limit: {{discovered_pps_limit}}. Useful Factors {{significant_factors | to_yaml}}"

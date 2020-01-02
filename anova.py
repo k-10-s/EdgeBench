@@ -293,6 +293,9 @@ else:
 		all = all + y + ","
 
 	if len(all) == 0:
+	
+		print("Unoptimized Mean")
+		print(str(np.mean(one)))
 		print("All the factors made it worse")
 		print("NONE")
 		exit()

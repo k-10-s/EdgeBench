@@ -1,5 +1,5 @@
 
-- name: Reboot to Defaults. Run {{ansible_loop.index}} of {{ansible_loop.length}}
+- name: Reboot to Defaults. Begining Factor {{current_factor_list}} ({{ansible_loop.index}} of {{ansible_loop.length}})
   reboot:
   become: yes
   tags: discover
@@ -9,6 +9,7 @@
 
 - name: Set Variable Factor Controls
   include_tasks: variable-controls.yml
+  tags: skippable
 
 - name: Copy Performance Monitor
   copy:
@@ -27,11 +28,11 @@
   tags: discover
 
 
-- name: End of Run ANOVA Test
+- name: End of Run Best Mean Test {{test_counter}}
   local_action:
     module: shell
     _raw_params: |
-        python anova.py 'results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run{{test_counter}}.csv' nicdrop "{{total_factors}}" "{{replicates|length}}" 0.05
+        python best-mean.py 'results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run{{test_counter}}.csv' nicdrop {{target_to_beat}}
   register: anova
   tags: anova
   when: "ansible_loop.revindex == 1 and test_counter > 1"
@@ -42,9 +43,4 @@
 - name: Update Last Loop Best
   set_fact:
    last_loop_best: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
-   #discovered_pps_limit: "{{pps_limit|int - target_to_beat}}"
-   #cacheable: yes
-
-
-- debug:
-    msg: "Last Loops Best: {{last_loop_best}}"
+  when: "ansible_loop.revindex == 1 and test_counter > 1"

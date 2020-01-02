@@ -2,13 +2,18 @@
 
 total_factors: 5
 total_combinations: 32 #2^5
-replicates: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20] #must be an array like this for it to work
-#replicates: [1,2,3]
+#replicates: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20] #must be an array like this for it to work
+replicates: [1,2,3,4,5,6,7,8]
+
+#replicates: [1,2]
 
 factor_combos: [N,A,B,AB,C,AC,BC,ABC,
                 D,AD,BD,ABD,CD,ACD,BCD,ABCD,
                 E,AE,BE,ABE,CE,ACE,BCE,ABCE,
                 DE,ADE,BDE,ABDE,CDE,ACDE,BCDE,ABCDE]
+
+#factor_combos: [N,A,B,AB]
+
 
 
 #Factor A
@@ -17,24 +22,39 @@ NAPI_budget: [ 300, 1200 ]
 
 #Factor B
 #Max Kernel Backlog default / large
-backlog: [ 1000 , 65536 ]
+backlog: [ 1000 , 262144 ]
 
 #Factor C
-#Receive Packet Steering (RPS) off / on
-rps_mask: [ 0, E ]
+#Socket receive queue memory default / large
+rmem_max: [ 212992, 425984 ]
 
 #Factor D
-#Receive Flow Steering (RFS) hash table size off / large
-rfs_table: [ 0, 262144 ]
+#Receive Flow Steering (RFS) hash table size and per queue flow count off / large
+rfs_table: [ 0, 32768 ]
+rfs_flow_cnt: [ 0, 32768 ]
 
 #Factor E
-#Rx Ring size small / large
-rxring: [ min, max ]
+#NAPI backlog poll loop weight default / large
+backlog_weight: [ 64 , 1200 ]
+
+
 
 
 ###Other possible variables###
-#Receive Flow Steering flows per RX queue
-rfs_flow_cnt: '262144'
+
+#how much the kernel will hold on to
+#net.core.rmem_default=8388608
+
+#OLD FACTOR C
+#Made it better in all cases
+#Receive Packet Steering (RPS) on (all but primary core)
+rps_mask: E
+
+#OLD FACTOR E
+#Made it worse in all cases
+#Rx Ring size small / large
+rxring: [ min, max ]
+
 
 #RX_checksumming on/off
 #More research may be worthwhile here. It seemed to boost suricata when off?
@@ -58,7 +78,8 @@ gro_status: 'off'
 
 packet_size_max: "1500"
 packet_size_min: "64"
-pps_limit: "170000"
+pps_limit: "160000"
 num_packets: "{{ pps_limit|int * 30 }}"
 num_packets_suricata: "9322025"
 test_counter: 1
+#last_loop_best: 0

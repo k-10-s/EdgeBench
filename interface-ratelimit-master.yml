@@ -1,38 +1,26 @@
-- name: Interface Ratelimit Experiment
-  connection: ssh
-  hosts: all
-  vars_files: vars.yml
-  gather_facts: true
+#- name: Interface Ratelimit Experiment
+#  connection: ssh
+#  hosts: all
+#  vars_files: vars.yml
+#  gather_facts: true
 
-  tasks:
-    - name: Determine Capture Interface Driver
-      shell: "ethtool -i {{capture_interface}} | awk 'NR == 1 {print $2}'"
-      register: capture_interface_driver
-      changed_when: false
-      become: yes
-      when: capture_driver is not defined
+#  tasks:
 
-    - name: Set Capture Driver Fact
-      set_fact:
-        capture_driver: "{{capture_interface_driver.stdout_lines[0]}}"
-        cacheable: yes
-      when: capture_driver is not defined
-      
-      #Rpis dont have a factor E currently
-    - name: Limit RPi Factors
-      set_fact:
-        total_factors: 4
-      when: "'rpi' in group_names and test_counter == 1" 
+#      #Rpis dont have a factor E currently
+#    - name: Limit RPi Factors
+#      set_fact:
+#        total_factors: 4
+#      when: "'rpi' in group_names and test_counter == 1"
 
-    - name: Begin Primary Test Control
+    - name: Begin Initial Test Control
       include_tasks: interface-ratelimit-control.yml
-      loop: "{{ factor_combos }}" #This will run 2^(#factors) times 
+      loop: "{{ factor_combos }}" #This will run 2^(#factors) times
       loop_control:
        loop_var: current_factor_list
        index_var: factor_idx
        extended: yes
-      when: "test_counter == 1" 
-      tags: 
+      when: "test_counter == 1"
+      tags:
         - discover
         - initial
 
@@ -40,68 +28,65 @@
       local_action:
         module: shell
         _raw_params: |
-            python anova.py 'results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run1.csv' nicdrop "{{total_factors}}" "{{replicates|length}}" 0.05 
+            python anova.py 'results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run1.csv' nicdrop "{{total_factors}}" "{{replicates|length}}" 0.05
       register: anova
       tags: anova
       ignore_errors: yes
-      changed_when: false 
-      when: "test_counter == 1" 
-      
-    - name: Set Significant Factors
+      changed_when: false
+      when: "test_counter == 1"
+
+    - name: Set Initial Significant Factors
       set_fact:
          significant_factors: "{{anova.stdout_lines[anova.stdout_lines|length -1].split(\",\")}}"
          target_to_beat: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
-         #discovered_pps_limit: "{{pps_limit|int - target_to_beat}}"
-         cacheable: yes
-      when: "test_counter == 1" 
-           
+         last_loop_best: "{{ target_to_beat }}"
+         #cacheable: yes
+      when: "test_counter == 1"
+
     - name: Significant Factors
       debug:
         var: significant_factors
-     
+
+
+    #- name: End Host if No Improvements
+    #  meta: end_host
+    #  when: "'NONE' in significant_factors"
     
     - name: Increment Test Counter
       set_fact:
          test_counter: "{{ test_counter | int + 1 }}"
-         
-    - name: Clean Up old Results
-      shell: |
-          rm -rf {{ sensor_dir }}/*.csv
-          rm -rf {{ sensor_dir }}/*.pid
-          rm -rf counters
-      args:
-          warn: false
-      become: yes
-            
-    - name: Continue Feedback Loop. Target to Beat "{{target_to_beat}}"
+
+    - name: Target To Beat
+      debug:
+        msg: "Target to Beat is {{target_to_beat}}. Using Factors {{significant_factors | to_yaml}}"
+
+    - name: Begin Followup Test Control
       include_tasks: interface-ratelimit-control.yml
-      loop: "{{significant_factors}}" 
+      loop: "{{significant_factors}}"
       loop_control:
         extended: yes
         loop_var: current_factor_list
         index_var: inner_index
-        
-    - name: Keep Going
+      when: "'NONE' not in significant_factors" 
+       
+      
+    - name: Last Loop Results
+      debug:
+        msg: "Last Loop best was {{last_loop_best}}. Needs to beat {{target_to_beat}}"
+
+    - name: Check Last Loop Results
       block:
-        - name: check last loop 
-          fail: 
-            msg: "Still room to improve"
-          when: "last_loop_best < target_to_beat"
-        
+        - name: Check Recursive Base Case
+          fail:
+            msg: "Still room to improve {{last_loop_best}} < {{target_to_beat}}"
+          when: "last_loop_best < target_to_beat" #Determine what "better" means here
+          
+
       rescue:
         - name: Update Target to Beat
           set_fact:
              target_to_beat: "{{last_loop_best}}"
-    
-        - include_tasks: interface-ratelimit-master.yml
-        
-             
-                   
-                   
-                   
-    - name: Store Final Result 
-      set_fact:
-        discovered_pps_limit: "{{last_loop_best}}"
-        cacheable: yes  
 
-
+        #Recursively call self to keep going
+        - name: Begin New Round
+          include_tasks: interface-ratelimit-master.yml

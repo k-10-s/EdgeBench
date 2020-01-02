@@ -34,8 +34,8 @@
             echo "{{sender.stdout}}" | tail -2 >> "{{send_interface}}-to-{{inventory_hostname}}".log
     ignore_errors: yes
 
-  - debug:
-        var: sender.stdout
+#  - debug:
+#        var: sender.stdout
 
   - name: Stop Everything
     shell: kill "$(cat gather.pid)"
@@ -68,6 +68,6 @@
       flat: yes
     changed_when: false
 
-  - name: Display Running Results
-    debug:
-        var: results.stdout
+  #- name: Display Running Results
+  #  debug:
+  #      var: results.stdout
