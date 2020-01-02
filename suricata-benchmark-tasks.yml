@@ -5,27 +5,15 @@
 #  connection: ssh
 #  gather_facts: false
 #  hosts: all
-#  vars:      
+#  vars:
 #        pps_limit: "100000" #Default, override with "-e"
 #  tasks:
-  
-  - name: Copy Performance Monitor
-    copy:
-      src: gather_stats.bash
-      dest: "{{sensor_dir}}/gather_stats.bash"
-      mode: '0755'
 
-  - name: Copy Latest suricata.yaml Configs
-    copy:
-      src: suricata.yaml
-      dest: "{{sensor_dir}}/suricata.yaml"
-      mode: '0777'
-      
   - name: Clean up possible stalled engines
-    shell: killall Suricata-Main; rm -rf "{{sensor_dir}}"/suricata.pid 
+    shell: killall Suricata-Main; rm -rf "{{sensor_dir}}"/suricata.pid
     become: yes
     ignore_errors: yes
-      
+
   - name: Begin Suricata
     shell: LD_LIBRARY_PATH=/usr/lib /usr/bin/suricata -c "{{sensor_dir}}"/suricata.yaml -i "{{capture_interface}}" --pidfile "{{sensor_dir}}"/suricata.pid
     register: suricata_async
@@ -39,8 +27,8 @@
     poll: 5
     changed_when: false
 
-  - name: Launch Performance Monitor (Factors {{ current_factor_list }})
-    shell: "./gather_stats.bash {{ pps_limit }} $(cat /sensor/suricata.pid) {{ capture_interface }} 1 {{ num_packets }} {{ current_factor_list }}"
+  - name: Launch Performance Monitor (Factors {{ current_factor_list }}) Run {{ ansible_loop.index }} of {{ ansible_loop.revindex }}
+    shell: "./gather_stats.bash {{ discovered_pps_limit }} $(cat /sensor/suricata.pid) {{ capture_interface }} 1 {{ num_packets }} {{ current_factor_list }}"
     args:
       chdir: "{{ sensor_dir }}/"
     register: results_async
@@ -48,14 +36,14 @@
     async: 3600
     become: yes
     changed_when: false
-    
+
   - debug:
        var: results_async
 
-  - name: Send traffic via tcpreplay ({{ num_packets }} packets at {{ pps_limit }} per second)
+  - name: Send traffic via tcpreplay ({{ num_packets }} packets at {{ discovered_pps_limit }} per second. Run {{ansible_loop.index}} of {{ansible_loop.revindex}})
     local_action:
-        module: shell 
-        _raw_params: sudo tcpreplay -i {{ send_interface }} --netmap -p {{ pps_limit }} truncd.pcap
+        module: shell
+        _raw_params: sudo tcpreplay -i {{ send_interface }} --netmap -p {{ discovered_pps_limit }} truncd.pcap
         warn: false
     register: sender
     tags: generate
@@ -71,7 +59,7 @@
     local_action:
         module: shell
         _raw_params: |
-            echo "{{pps_limit}} --" >> "{{send_interface}}-to-{{inventory_hostname}}".log
+            echo "{{discovered_pps_limit}} --" >> "{{send_interface}}-to-{{inventory_hostname}}".log
             echo "{{sender.stdout}}" >> "{{send_interface}}-to-{{inventory_hostname}}".log
     ignore_errors: yes
 
@@ -95,14 +83,14 @@
   - name: Copy Results
     fetch:
       src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results-verbose.csv"
-      dest: "results/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results-verbose.csv"
+      dest: "results/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results-run{{test_counter}}-verbose.csv"
       flat: yes
     changed_when: false
 
   - name: Copy Totals
     fetch:
       src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results.csv"
-      dest: "results/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results.csv"
+      dest: "results/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results-run{{test_counter}}.csv"
       flat: yes
     changed_when: false
 

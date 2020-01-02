@@ -16,9 +16,17 @@
       set_fact:
         capture_driver: "{{capture_interface_driver.stdout_lines[0]}}"
         cacheable: yes
-  
-    - include_tasks: suricata-benchmark-control.yml
-      loop: "{{ factor_combos }}" #This will run 2^(#factors) times 
+      when: capture_driver is not defined
+
+      #Rpis dont have a factor E currently
+    - name: Limit RPi Factors
+      set_fact:
+        total_factors: 4
+      when: "'rpi' in group_names"
+
+    - name: Begin Primary Test Control
+      include_tasks: suricata-benchmark-control.yml
+      loop: "{{ factor_combos }}" #This will run 2^(#factors) times
       loop_control:
        loop_var: current_factor_list
        index_var: factor_idx
@@ -28,16 +36,42 @@
       local_action:
         module: shell
         _raw_params: |
-            python anova.py ""results/{{inventory_hostname}}-{{capture_driver}}-suricata-results.csv" kerndrop {{total_factors}} {{replicates.len}} {{inventory_hostname}}""
+            python anova.py 'results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results.csv' nicdrop "{{total_factors}}" "{{replicates|length}}" 0.05
       register: anova
       tags: anova
       ignore_errors: yes
-      changed_when: false 
-    
+      changed_when: false
+
+    - name: Set Significant Factors
+      set_fact:
+         significant_factors: "{{anova.stdout_lines[anova.stdout_lines|length -1].split(\",\")}}"
+         interface_packet_drop: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
+         discovered_pps_limit: "{{pps_limit|int - interface_packet_drop}}"
+         cacheable: yes
+
     - debug:
-       var: anova.stdout
-       tags: anova
- 
+        var: significant_factors
 
+    - debug:
+        var: discovered_pps_limit
 
+    - name: Increment Test Counter
+      set_fact:
+         test_counter: "{{ test_counter | int + 1 }}"
 
+    - name: Clean Up old Results
+      shell: |
+          rm -rf {{ sensor_dir }}/*.csv
+          rm -rf {{ sensor_dir }}/*.pid
+          rm -rf counters
+      args:
+          warn: false
+      become: yes
+
+    - name: Continue Feedback Loop
+      include_tasks: suricata-ratelimit-control.yml
+      loop: "{{significant_factors}}"
+      loop_control:
+        extended: yes
+        loop_var: current_factor_list
+        index_var: inner_index
