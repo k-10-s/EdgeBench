@@ -3,7 +3,6 @@
 - name: Set Receive Offloads
   command: "ethtool -K {{ capture_interface }} lro {{ lro_status }} gro {{ gro_status }} rx {{ rx_checksum_status }}"
   become: yes
-  tags: skippable
 
 - name: Enable Capture Interface and Set Promiscuous
   shell: |
@@ -25,7 +24,6 @@
   shell: swapoff -a
   become: yes
   when: "'nvidia' not in group_names"
-  tags: skippable
 
 - name: Bump RPi Throttling Temp (3B+ only)
   lineinfile:
@@ -34,7 +32,6 @@
     line: temp_soft_limit=70.0
   when: "'nvidia' not in group_names"
   become: yes
-  tags: skippable
 
 - name: Disable Flow Control On Send Interface
   local_action:
@@ -56,7 +53,6 @@
 - name: Set RX Packet Timestamping
   shell: sysctl -w net.core.netdev_tstamp_prequeue={{ rx_timestamp_status }}
   become: yes
-  tags: skippable
 
   #https://www.kernel.org/doc/Documentation/networking/scaling.txt
   #Has some bugs. Probably a better way. Doesnt seem to apply much to ARM boards
@@ -71,4 +67,3 @@
   shell: "echo {{ rps_mask }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
   become: yes
   ignore_errors: yes
-  tags: skippable

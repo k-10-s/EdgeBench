@@ -3,26 +3,43 @@
   ###FACTOR A###
   #Determines how much packet processing can be spent among all NAPI structures registered to a CPU
   #likely only makes a difference on multiqueue / multiinterface systems
-- name: (Factor A) Increase NAPI Budget to {{NAPI_budget[1]|int*test_counter|int}}
-  shell: sysctl -w net.core.netdev_budget={{NAPI_budget[1]|int*test_counter|int}}
+- name: (Factor A) Increase NAPI Budget to {{NAPI_budget|int*loop_multiplier}} #var * counter ^ counter
+  shell: sysctl -w net.core.netdev_budget={{NAPI_budget|int*loop_multiplier}}
   become: yes
   when: "'A' in current_factor_list"
-
+  
+- name: Record A Level
+  set_fact:
+   A_level: "{{A_level}} + [ '{{NAPI_budget|int*loop_multiplier}}' ]"
+  when: "'A' in current_factor_list"
+  
   ###FACTOR B###
   #https://community.mellanox.com/s/article/linux-sysctl-tuning
   #https://blog.packagecloud.io/eng/2016/06/22/monitoring-tuning-linux-networking-stack-receiving-data/
-- name: (Factor B) Set Kernel Max Backlog to {{backlog[1]|int*test_counter|int}}
-  shell: sysctl -w net.core.netdev_max_backlog={{backlog[1]|int*test_counter|int}}
+- name: (Factor B) Set Kernel Max Backlog to {{backlog|int*loop_multiplier}}
+  shell: sysctl -w net.core.netdev_max_backlog={{backlog|int*loop_multiplier}}
   become: yes
   when: "'B' in current_factor_list"
+  
+- name: Record B Level
+  set_fact:
+   B_level: "{{B_level}} + [ '{{backlog|int*loop_multiplier}}' ]"
+  when: "'B' in current_factor_list" 
+  
 
   ###FACTOR C###
   #https://blog.packagecloud.io/eng/2016/06/22/monitoring-tuning-linux-networking-stack-receiving-data/
-- name: (Factor C) Set Socket Recieve Max Buffer Size to {{rmem_max[1]|int*test_counter|int}}
-  shell: sysctl -w net.core.rmem_max={{rmem_max[1]|int*test_counter|int}}
+- name: (Factor C) Set Socket Recieve Max Buffer Size to {{rmem_max|int*loop_multiplier}}
+  shell: sysctl -w net.core.rmem_max={{rmem_max|int*loop_multiplier}}
   become: yes
   ignore_errors: yes
   when: "'C' in current_factor_list"
+
+- name: Record C Level
+  set_fact:
+   C_level: "{{C_level}} + [ '{{rmem_max|int*loop_multiplier}}' ]"
+  when: "'C' in current_factor_list" 
+
 
   ###FACTOR D###
   #https://blog.packagecloud.io/eng/2016/06/22/monitoring-tuning-linux-networking-stack-receiving-data
@@ -32,23 +49,35 @@
 
   ##RFS keeps track of a global hash table of all flows and the size of this hash table can be adjusted by setting the net.core.rps_sock_flow_entries sysctl.
   ##You can also set the number of flows per RX queue by writing this value to the sysfs file named rps_flow_cnt for each RX queue.
-- name: (Factor D) Set Receive Flow Steering (RFS) Table Size to {{rfs_table[1]|int*test_counter|int}}
+  
+  #For a single queue device, the rps_flow_cnt value for the single queue
+  #would normally be configured to the same value as rps_sock_flow_entries.
+  #https://www.kernel.org/doc/Documentation/networking/scaling.txt
+- name: (Factor D) Set Receive Flow Steering (RFS) Table Size to {{rfs_table|int*loop_multiplier}}
   shell: |
-    sysctl -w net.core.rps_sock_flow_entries="{{ rfs_table[1]|int*test_counter|int }}"
-    echo "{{ rfs_flow_cnt[1]|int*test_counter|int }}" > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_flow_cnt
+    sysctl -w net.core.rps_sock_flow_entries="{{ rfs_table|int*loop_multiplier }}"
+    echo "{{ rfs_flow_cnt|int*loop_multiplier }}" > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_flow_cnt
   become: yes
   ignore_errors: yes
   when: "'D' in current_factor_list"
 
+- name: Record D Level
+  set_fact:
+   D_level: "{{D_level}} + [ '{{rfs_table|int*loop_multiplier}}' ]"
+  when: "'D' in current_factor_list"
+
   ###FACTOR E###
   #Adjusting this value determines how much of the overall budget the backlog poll loop can consume
-- name: (Factor E) Set Backlog Loop Weight to {{backlog_weight[1]|int*test_counter|int}}
-  shell: sysctl -w net.core.dev_weight={{backlog_weight[1]|int*test_counter|int}}
+- name: (Factor E) Set Backlog Loop Weight to {{backlog_weight|int*loop_multiplier}}
+  shell: sysctl -w net.core.dev_weight={{backlog_weight|int*loop_multiplier}}
   become: yes
   ignore_errors: yes
   when: "'E' in current_factor_list"
   
-  
+- name: Record E Level
+  set_fact:
+   E_level: "{{E_level}} + [ '{{backlog_weight|int*loop_multiplier}}' ]"
+  when: "'E' in current_factor_list"  
   
   #This appears to be set very low by default for legacy compatibility?
   #Can set them larger since we dont care as much about latency

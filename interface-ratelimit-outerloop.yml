@@ -2,14 +2,13 @@
 - name: Reboot to Defaults. Begining Factor {{current_factor_list}} ({{ansible_loop.index}} of {{ansible_loop.length}})
   reboot:
   become: yes
-  tags: discover
+  tags: skippable
 
 - name: Set Static Controls
-  include_tasks: static-controls.yml
+  include_tasks: interface-static-controls.yml
 
 - name: Set Variable Factor Controls
-  include_tasks: variable-controls.yml
-  tags: skippable
+  include_tasks: interface-variable-controls.yml
 
 - name: Copy Performance Monitor
   copy:
@@ -17,28 +16,25 @@
     dest: "{{sensor_dir}}/gather_stats.bash"
     mode: '0755'
 
-  #-run replicates
-- name: Begin Interface Ratelimit Benchmark
-  include_tasks: interface-ratelimit-tasks.yml
+  #Run replicates
+- name: Begin Inner Loop
+  include_tasks: interface-ratelimit-innerloop.yml
   loop: "{{ replicates }}"
   loop_control:
     extended: yes
     loop_var: inner_counter
     index_var: inner_idx
-  tags: discover
-
 
 - name: End of Run Best Mean Test {{test_counter}}
   local_action:
     module: shell
     _raw_params: |
-        python best-mean.py 'results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run{{test_counter}}.csv' nicdrop {{target_to_beat}}
+        python best-mean.py 'results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run{{test_counter}}.csv' nicdrop,avg {{target_to_beat}}
   register: anova
   tags: anova
   when: "ansible_loop.revindex == 1 and test_counter > 1"
   changed_when: false
   ignore_errors: yes
-
 
 - name: Update Last Loop Best
   set_fact:

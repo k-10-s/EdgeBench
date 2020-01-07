@@ -1,0 +1,81 @@
+
+  - name: Launch Performance Monitor (Factors {{ current_factor_list }})
+    shell: "./gather_stats.bash {{ line_pps_limit }} -1 {{ capture_interface }} 1 {{ num_packets }} {{ current_factor_list }}"
+    args:
+      chdir: "{{ sensor_dir }}/"
+    register: results_async
+    poll: 0
+    async: 3600
+    become: yes
+    changed_when: false
+
+  - name: Generate Traffic ({{ num_packets }} packets at {{ line_pps_limit }} per second. Run {{ansible_loop.index}} of {{ansible_loop.length}})
+    local_action:
+        module: shell
+        _raw_params: sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets }} -R {{ line_pps_limit }} -l {{ packet_size_max }} -l {{ packet_size_min }} -w 5 -zZ
+        warn: false
+    register: sender
+    tags: generate
+    changed_when: false
+    async: 80
+    poll: 5
+    ignore_errors: yes
+    
+#  - name: Send traffic via tcpreplay ({{ num_packets }} packets at {{ line_pps_limit }} per second. Run {{ansible_loop.index}} of {{ansible_loop.length}})
+#    local_action:
+#        module: shell
+#        _raw_params: sudo tcpreplay -i {{ send_interface }} --netmap -p {{ line_pps_limit }} {{ generator_dir }}/Monday-WorkingHours-Fixed2.pcap
+#        warn: false
+#    register: sender
+#    tags: generate
+#    async: 360
+#    poll: 5
+#    ignore_errors: yes
+#    changed_when: false   
+    
+ 
+  - name: Store Generator Stats
+    local_action:
+        module: shell
+        _raw_params: |
+            echo "{{line_pps_limit}} --" >> "results/verbose/{{send_interface}}-to-{{inventory_hostname}}".log
+            echo "{{sender.stdout}}" | tail -2 >> "results/verbose/{{send_interface}}-to-{{inventory_hostname}}".log
+    ignore_errors: yes
+
+#  - debug:
+#        var: sender.stdout
+
+  - name: Stop Everything
+    shell: kill "$(cat gather.pid)"
+    args:
+      chdir: "{{ sensor_dir }}"
+    become: yes
+    ignore_errors: yes
+    failed_when: false
+
+  - name: Wait for Results
+    async_status: jid="{{ results_async.ansible_job_id }}"
+    become: yes
+    register: results
+    until: results.finished
+    retries: 30
+    failed_when: false
+    ignore_errors: yes
+
+  - name: Copy Verbose Results
+    fetch:
+      src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-verbose.csv"
+      dest: "results/verbose/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run{{test_counter}}-verbose.csv"
+      flat: yes
+    changed_when: false
+
+  - name: Copy Totals
+    fetch:
+      src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results.csv"
+      dest: "results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run{{test_counter}}.csv"
+      flat: yes
+    changed_when: false
+
+  - name: Display Running Results
+    debug:
+        var: results.stdout
