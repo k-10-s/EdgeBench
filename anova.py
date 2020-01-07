@@ -19,17 +19,16 @@ import sys
 #Thanks to Marvin for Python help
 
 if len(sys.argv) <= 5:
-	print("Not enough args usage: anova.py <*.csv> <rv> <factors> <replicates> <alpha> optional: device")
-	print("ex: anova.py testdata.csv nicdrop 5 10 .05 TX1")
-	print("<rv> is response variable")
+	print("Not enough args usage: anova.py <*.csv> <rv1,rv2> <factors> <replicates> <alpha> optional: device")
+	print("ex: anova.py testdata.csv nicdrop,avg 5 10 .05 TX1")
+	print("<rv> is response variable, note comma in example")
 	print("\"Device\" is used in normplot of effects, omit to skip graph")
 	exit()
 
 n = int(sys.argv[4]) #replicates
 k = int(sys.argv[3]) #factors
 alpha = float(sys.argv[5])
-rv = str(sys.argv[2])
-
+rv = sys.argv[2].split(',')
 
 if k > 5 or k < 1:
 	print("Max factors is 5, Min is 1")
@@ -37,24 +36,24 @@ if k > 5 or k < 1:
 
 
 data2 = pd.read_csv(sys.argv[1], header=[0,1])
-response_var = data2[[rv,'factors']]
+response_var = data2[[rv[0],'factors']]
 response_var.columns = response_var.columns.get_level_values(1)
-#print(response_var.groupby('code').mean().sort_values(by=['avg']).round(0))
+#print(response_var.groupby('code').mean().sort_values(by=[rv[1]]).round(0))
 
 if(k >= 1):
 	df_index=['A', 'Error', 'Total']
-	one = response_var[response_var['code'] == 'N'].loc[:,'avg'].to_numpy()
-	a 	= response_var[response_var['code'] == 'A'].loc[:,'avg'].to_numpy()
+	one = response_var[response_var['code'] == 'N'].loc[:,rv[1]].to_numpy()
+	a 	= response_var[response_var['code'] == 'A'].loc[:,rv[1]].to_numpy()
 	means_all = np.array([np.mean(a)])
 	total = np.array([one, a])
 	contrast_A = np.sum(-one + a)
 	contrasts_all = np.array([contrast_A])
 if(k >= 2):
 	df_index=['A', 'B', 'AB', 'Error', 'Total']
-	one = response_var[response_var['code'] == 'N'].loc[:,'avg'].to_numpy()
-	a 	= response_var[response_var['code'] == 'A'].loc[:,'avg'].to_numpy()
-	b 	= response_var[response_var['code'] == 'B'].loc[:,'avg'].to_numpy()
-	ab 	= response_var[response_var['code'] == 'AB'].loc[:,'avg'].to_numpy()
+	one = response_var[response_var['code'] == 'N'].loc[:,rv[1]].to_numpy()
+	a 	= response_var[response_var['code'] == 'A'].loc[:,rv[1]].to_numpy()
+	b 	= response_var[response_var['code'] == 'B'].loc[:,rv[1]].to_numpy()
+	ab 	= response_var[response_var['code'] == 'AB'].loc[:,rv[1]].to_numpy()
 	means_all = np.array([np.mean(a), np.mean(b), np.mean(ab)])
 	total = np.array([one, a, b, ab])
 	contrast_A = np.sum(-one + a - b + ab)
@@ -63,10 +62,10 @@ if(k >= 2):
 	contrasts_all = np.array([contrast_A, contrast_B, contrast_AB])
 if(k >= 3):
 	df_index=['A', 'B', 'AB', 'C', 'AC', 'BC', 'ABC', 'Error', 'Total']
-	c 	= response_var[response_var['code'] == 'C'].loc[:,'avg'].to_numpy()
-	ac 	= response_var[response_var['code'] == 'AC'].loc[:,'avg'].to_numpy()
-	bc 	= response_var[response_var['code'] == 'BC'].loc[:,'avg'].to_numpy()
-	abc = response_var[response_var['code'] == 'ABC'].loc[:,'avg'].to_numpy()
+	c 	= response_var[response_var['code'] == 'C'].loc[:,rv[1]].to_numpy()
+	ac 	= response_var[response_var['code'] == 'AC'].loc[:,rv[1]].to_numpy()
+	bc 	= response_var[response_var['code'] == 'BC'].loc[:,rv[1]].to_numpy()
+	abc = response_var[response_var['code'] == 'ABC'].loc[:,rv[1]].to_numpy()
 	means_all = np.array([np.mean(a), np.mean(b), np.mean(ab), np.mean(c), np.mean(ac), np.mean(bc), np.mean(abc)])
 	total = np.array([one, a, b, ab, c, ac, bc, abc])
 	contrast_A = np.sum(-one + a - b + ab - c + ac - bc + abc)
@@ -79,14 +78,14 @@ if(k >= 3):
 	contrasts_all = np.array([contrast_A, contrast_B, contrast_AB, contrast_C, contrast_AC, contrast_BC, contrast_ABC])
 if(k >= 4):
 	df_index=['A', 'B', 'AB', 'C', 'AC', 'BC', 'ABC', 'D', 'AD', 'BD', 'ABD', 'CD', 'ACD', 'BCD', 'ABCD', 'Error', 'Total']
-	d 	= response_var[response_var['code'] == 'D'].loc[:,'avg'].to_numpy()
-	ad 	= response_var[response_var['code'] == 'AD'].loc[:,'avg'].to_numpy()
-	bd 	= response_var[response_var['code'] == 'BD'].loc[:,'avg'].to_numpy()
-	abd = response_var[response_var['code'] == 'ABD'].loc[:,'avg'].to_numpy()
-	cd 	= response_var[response_var['code'] == 'CD'].loc[:,'avg'].to_numpy()
-	acd = response_var[response_var['code'] == 'ACD'].loc[:,'avg'].to_numpy()
-	bcd = response_var[response_var['code'] == 'BCD'].loc[:,'avg'].to_numpy()
-	abcd = response_var[response_var['code'] == 'ABCD'].loc[:,'avg'].to_numpy()
+	d 	= response_var[response_var['code'] == 'D'].loc[:,rv[1]].to_numpy()
+	ad 	= response_var[response_var['code'] == 'AD'].loc[:,rv[1]].to_numpy()
+	bd 	= response_var[response_var['code'] == 'BD'].loc[:,rv[1]].to_numpy()
+	abd = response_var[response_var['code'] == 'ABD'].loc[:,rv[1]].to_numpy()
+	cd 	= response_var[response_var['code'] == 'CD'].loc[:,rv[1]].to_numpy()
+	acd = response_var[response_var['code'] == 'ACD'].loc[:,rv[1]].to_numpy()
+	bcd = response_var[response_var['code'] == 'BCD'].loc[:,rv[1]].to_numpy()
+	abcd = response_var[response_var['code'] == 'ABCD'].loc[:,rv[1]].to_numpy()
 	means_all = np.array([np.mean(a), np.mean(b), np.mean(ab), np.mean(c), np.mean(ac), np.mean(bc), np.mean(abc), np.mean(d),
 							np.mean(ad), np.mean(bd), np.mean(abd), np.mean(cd), np.mean(acd), np.mean(bcd), np.mean(abcd)])
 	total = np.array([one, a, b, ab, c, ac, bc, abc, d, ad, bd, abd, cd, acd, bcd, abcd])
@@ -110,22 +109,22 @@ if(k >= 4):
 if(k >= 5):
 	df_index=['A', 'B', 'AB', 'C', 'AC', 'BC', 'ABC', 'D', 'AD', 'BD', 'ABD', 'CD', 'ACD', 'BCD', 'ABCD', 'E', 'AE', 'BE', 'ABE',
 	'CE', 'ACE', 'BCE', 'ABCE','DE', 'ADE', 'BDE', 'ABDE', 'CDE', 'ACDE', 'BCDE', 'ABCDE', 'Error', 'Total']
-	e 	= response_var[response_var['code'] == 'E'].loc[:,'avg'].to_numpy()
-	ae 	= response_var[response_var['code'] == 'AE'].loc[:,'avg'].to_numpy()
-	be 	= response_var[response_var['code'] == 'BE'].loc[:,'avg'].to_numpy()
-	abe = response_var[response_var['code'] == 'ABE'].loc[:,'avg'].to_numpy()
-	ce 	= response_var[response_var['code'] == 'CE'].loc[:,'avg'].to_numpy()
-	ace = response_var[response_var['code'] ==  'ACE'].loc[:,'avg'].to_numpy()
-	bce = response_var[response_var['code'] == 'BCE'].loc[:,'avg'].to_numpy()
-	abce = response_var[response_var['code'] == 'ABCE'].loc[:,'avg'].to_numpy()
-	de 	= response_var[response_var['code'] == 'DE'].loc[:,'avg'].to_numpy()
-	ade = response_var[response_var['code'] == 'ADE'].loc[:,'avg'].to_numpy()
-	bde = response_var[response_var['code'] == 'BDE'].loc[:,'avg'].to_numpy()
-	abde = response_var[response_var['code'] == 'ABDE'].loc[:,'avg'].to_numpy()
-	cde = response_var[response_var['code'] == 'CDE'].loc[:,'avg'].to_numpy()
-	acde = response_var[response_var['code'] == 'ACDE'].loc[:,'avg'].to_numpy()
-	bcde = response_var[response_var['code'] == 'BCDE'].loc[:,'avg'].to_numpy()
-	abcde = response_var[response_var['code'] == 'ABCDE'].loc[:,'avg'].to_numpy()
+	e 	= response_var[response_var['code'] == 'E'].loc[:,rv[1]].to_numpy()
+	ae 	= response_var[response_var['code'] == 'AE'].loc[:,rv[1]].to_numpy()
+	be 	= response_var[response_var['code'] == 'BE'].loc[:,rv[1]].to_numpy()
+	abe = response_var[response_var['code'] == 'ABE'].loc[:,rv[1]].to_numpy()
+	ce 	= response_var[response_var['code'] == 'CE'].loc[:,rv[1]].to_numpy()
+	ace = response_var[response_var['code'] ==  'ACE'].loc[:,rv[1]].to_numpy()
+	bce = response_var[response_var['code'] == 'BCE'].loc[:,rv[1]].to_numpy()
+	abce = response_var[response_var['code'] == 'ABCE'].loc[:,rv[1]].to_numpy()
+	de 	= response_var[response_var['code'] == 'DE'].loc[:,rv[1]].to_numpy()
+	ade = response_var[response_var['code'] == 'ADE'].loc[:,rv[1]].to_numpy()
+	bde = response_var[response_var['code'] == 'BDE'].loc[:,rv[1]].to_numpy()
+	abde = response_var[response_var['code'] == 'ABDE'].loc[:,rv[1]].to_numpy()
+	cde = response_var[response_var['code'] == 'CDE'].loc[:,rv[1]].to_numpy()
+	acde = response_var[response_var['code'] == 'ACDE'].loc[:,rv[1]].to_numpy()
+	bcde = response_var[response_var['code'] == 'BCDE'].loc[:,rv[1]].to_numpy()
+	abcde = response_var[response_var['code'] == 'ABCDE'].loc[:,rv[1]].to_numpy()
 	means_all = np.array([np.mean(a), np.mean(b), np.mean(ab), np.mean(c), np.mean(ac), np.mean(bc), np.mean(abc), np.mean(d),
 							np.mean(ad), np.mean(bd), np.mean(abd), np.mean(cd), np.mean(acd), np.mean(bcd), np.mean(abcd),np.mean(e),
 							np.mean(ae),np.mean(be),np.mean(abe),np.mean(ce),np.mean(ace),np.mean(bce),np.mean(abce),np.mean(de),np.mean(ade),
@@ -260,10 +259,21 @@ anova_df_pandas['p-value']= anova_df_pandas['p-value'].convert_objects(convert_n
 print("Unoptimized Mean: " + str(np.mean(one)))
 print(anova_df_pandas.round(5))
 
+#anova_df_pandas.to_excel("output.xlsx")
+
 ##Significant Factors Only
 significant_factors = anova_df_pandas[(anova_df_pandas['p-value'] < alpha)].round(5)
 candidiate_factors = significant_factors[(significant_factors['Effect Est.'] < 0)].sort_values(by=['Sample Mean'])
 longest = ""
+
+
+if significant_factors.empty == False:
+	anova_df_pandas[(anova_df_pandas['p-value'] < alpha)].to_csv("results/anova/" + sys.argv[6]+"-"+rv[0]+"-"+rv[1]+"-significant-anova-output-" + sys.argv[1][-8:-4] + ".csv")
+
+anova_df_pandas.to_csv("results/anova/" + sys.argv[6]+"-"+rv[0]+"-"+rv[1]+"-all-anova-output-" + sys.argv[1][-8:-4] + ".csv")
+
+
+
 
 if candidiate_factors.empty == False:
 	print("\nSignificant Factors (alpha = " + str(alpha) + ")")
@@ -293,7 +303,7 @@ else:
 		all = all + y + ","
 
 	if len(all) == 0:
-	
+
 		print("Unoptimized Mean")
 		print(str(np.mean(one)))
 		print("All the factors made it worse")
@@ -305,13 +315,16 @@ else:
 	print(int(anova_df_pandas[(anova_df_pandas['Sample Mean'] < np.mean(one))]['Sample Mean'].min()))
 	print("Next best guesses")
 
-print(all.rstrip(','))
+if len(all) == 0:
+	print("NONE") #I shouldnt get here...
+else
+	print(all.rstrip(','))
 
 #Normplot of effects
 if len(sys.argv) == 7:
 	fig = plt.figure(figsize=(6,4))
 	probscale.probplot(effects,plottype='prob',probax='y',problabel='Standard Normal Probabilities',bestfit=True)
 	plt.xlabel("Normal Probability Plot of Effect Estimates")
-	plt.title("Avg Packets Dropped, 30sec [" + sys.argv[6] +"]")
+	plt.title(rv[0] +" - " + rv[1] + " [" + sys.argv[6] +"]")
 	plt.tight_layout()
-	plt.show()
+	plt.savefig("results/anova/"+sys.argv[6]+"-"+rv[0]+"-"+rv[1]+"-anova-normplot-"+sys.argv[1][-8:-4]+".png")
