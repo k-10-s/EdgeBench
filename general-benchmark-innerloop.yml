@@ -29,10 +29,10 @@
     failed_when: false
     ignore_errors: yes
 
-  - name: Copy Results
+  - name: Copy Verbose Results
     fetch:
       src: "{{experiment_dir}}/{{ inventory_hostname }}-results-verbose.csv"
-      dest: "results/{{ inventory_hostname }}-results-run{{test_counter}}-verbose.csv"
+      dest: "results/verbose/{{ inventory_hostname }}-results-run{{test_counter}}-verbose.csv"
       flat: yes
     changed_when: false
 

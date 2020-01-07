@@ -1,0 +1,32 @@
+#This playbook acts as the "main" function
+#It has to be its own file since the "tasks:" keyword
+#can only appear once within all the loops
+- name: Generic Experiment Template
+  connection: ssh
+  hosts: all
+  vars_files: vars.yml
+  gather_facts: true
+
+  tasks:
+    - name: Clean Up old Results
+      shell: |
+          rm -rf "{{ experiment_dir }}"/*.csv
+      args:
+          warn: false
+      become: yes
+      
+    - name: Begin New Test
+      include_tasks: general-benchmark-recursive.yml
+
+    - name: Done Looping, Store Final Result
+      set_fact:
+        your_result: "{{ *** }}"
+        #cacheable: yes
+
+    - name: List Variable Final States
+      debug:
+        msg: "A levels: {{ A_level | to_yaml }} - B levels: {{ B_level | to_yaml }} - C levels: {{ C_level | to_yaml }} - D levels: {{ D_level | to_yaml }} - E levels: {{ E_level | to_yaml }}"
+
+    - name: Display Final Result
+      debug:
+        msg: "PPS Limit: {{ your_result }}"
