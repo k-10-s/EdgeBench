@@ -2,9 +2,10 @@
 
 total_factors: 5
 total_combinations: 32 #2^5
-#replicates: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20] #must be an array like this for it to work
-replicates: [1,2,3,4,5,6,7,8]
 
+#must be an array like this for it to work
+#replicates: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20] 
+replicates: [1,2,3,4,5]
 #replicates: [1,2]
 
 factor_combos: [N,A,B,AB,C,AC,BC,ABC,
@@ -12,74 +13,76 @@ factor_combos: [N,A,B,AB,C,AC,BC,ABC,
                 E,AE,BE,ABE,CE,ACE,BCE,ABCE,
                 DE,ADE,BDE,ABDE,CDE,ACDE,BCDE,ABCDE]
 
-#factor_combos: [N,A,B,AB]
+
+###Variable controls###
+
+#Used to store values actually attempted
+A_level: []
+B_level: []
+C_level: []
+D_level: []
+E_level: []
+
+#New API (NAPI) IRQ budget 
+#default = 300
+NAPI_budget: 1200
+
+#Max Kernel Backlog 
+#default = 1000
+backlog:  262144
+
+#Socket receive queue memory 
+#default = 212992
+rmem_max: 425984
+
+#Receive Flow Steering (RFS) hash table size and per queue flow count 
+#default = off 
+rfs_table: 32768 
+rfs_flow_cnt: 32768
+
+#NAPI backlog poll loop weight 
+#default = 64
+backlog_weight: 1200 
+
+#libpcap buffer size
+#default = 2048 bytes
+libpcap_buffer: 8192
+
+#afpacket buffer size
 
 
 
-#Factor A
-#New API (NAPI) IRQ budget default / large
-NAPI_budget: [ 300, 1200 ]
-
-#Factor B
-#Max Kernel Backlog default / large
-backlog: [ 1000 , 262144 ]
-
-#Factor C
-#Socket receive queue memory default / large
-rmem_max: [ 212992, 425984 ]
-
-#Factor D
-#Receive Flow Steering (RFS) hash table size and per queue flow count off / large
-rfs_table: [ 0, 32768 ]
-rfs_flow_cnt: [ 0, 32768 ]
-
-#Factor E
-#NAPI backlog poll loop weight default / large
-backlog_weight: [ 64 , 1200 ]
-
-
-
-
-###Other possible variables###
-
+###Static controls###
 #how much the kernel will hold on to
 #net.core.rmem_default=8388608
 
-#OLD FACTOR C
-#Made it better in all cases
-#Receive Packet Steering (RPS) on (all but primary core)
-rps_mask: E
-
-#OLD FACTOR E
-#Made it worse in all cases
 #Rx Ring size small / large
+#default varies, or not supported
 rxring: [ min, max ]
-
 
 #RX_checksumming on/off
 #More research may be worthwhile here. It seemed to boost suricata when off?
 #lan78xx driver on rpi3 fails to read random traffic from pkt-gen when on. probably due to UDP header / payload mismatch
+#default = on 
 rx_checksum_status: 'off'
 
 #RX_timestamping on/off
 #Moves timestamping of rx packets to after they enter load balanced RPS queue vs before
+#default = on 
 rx_timestamp_status: '0'
 
 #Large Receive / Generic Receive offload on/off.
-#Off for suricata (breaks flow tracking?)
+#Off for suricata
+#default = on 
 lro_status: 'off'
 gro_status: 'off'
 
-#Libpcap buffer size
-#Varies based on available memory. Userspace variable...
 
-#afpacket buffer size
-#Varies based on available memory. Userspace variable...
-
+###other vars###
 packet_size_max: "1500"
 packet_size_min: "64"
-pps_limit: "160000"
 num_packets: "{{ pps_limit|int * 30 }}"
-num_packets_suricata: "9322025"
+num_packets_cic_monday: 17997887
 test_counter: 1
-#last_loop_best: 0
+loop_multiplier: 1
+pps_limit: 160000

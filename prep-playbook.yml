@@ -162,6 +162,7 @@
   - name: Reboot to apply updates
     reboot:
     become: yes
+    tags: reboot
 
 ##Generator Setup##
 #This assumes your ansible host is also the traffic generator. It doesnt have to be..
@@ -194,30 +195,36 @@
     ignore_errors: yes
     become: yes
 
-  - name: Enable Docker Usage
-    shell: |
-        sudo usermod -aG docker $USER
-        docker network create experiment
+  - name: Set Docker Permissions
+    shell: usermod -aG docker $USER
     become: yes
     ignore_errors: yes
-  
+    
+  - name: Create Docker Network
+    docker_network:
+      name: experiment
+
   - name: Grab required Python packages
     pip:
-        name:
-        - matplotlib 
-        - pandas 
-        - scipy 
-        - numpy 
-        - researchpy 
-        - seaborn 
-        - probscale 
-        - statsmodels 
-        - pytest
-        become: yes
+       name:
+       - matplotlib 
+       - pandas 
+       - scipy 
+       - numpy 
+       - researchpy 
+       - seaborn 
+       - probscale 
+       - statsmodels 
+       - pytest
+    become: yes
 
   - name: Create Generator Directory
     file:
-      path: "{{ generator_dir }}"
+      path: |
+        "{{ generator_dir }}"
+        "{{ generator_dir }}/results"
+        "{{ generator_dir }}/results/verbose"
+        "{{ generator_dir }}/results/anova"
       state: directory
       mode: '0777'
     become: yes
@@ -261,6 +268,8 @@
     tags: netmap
 
     #anytime the kernel is updated these modules will need rebuilt
+    #if this fails after a reboot the kernel may have changed, 
+    #delete the netmap/ folder and rebuild it
   - name: Enable Netmap Drivers
     shell: |
      rmmod igb 2> /dev/null
@@ -306,12 +315,12 @@
   - name: Pull Elasticsearch Docker Image
     docker_container:
         name: elastic
-        pull: elasticsearch:7.5.0
+        image: elasticsearch:7.5.0
     
   - name: Pull Kibana Docker Image
     docker_container:
         name: kibana
-        pull: kibana:7.5.0
+        image: kibana:7.5.0
     
     
     

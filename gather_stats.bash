@@ -202,6 +202,7 @@ function buildFinalStats {
 	#( All items in array / (Array size - zero count) )
 	IFS='+'
 	(( RX_PKTS_TOTAL=RX_PKTS_LAST-RX_PKTS_FIRST ))
+	
 	#currently only suricata gives access to real time kernel drops
 	if [ "$PROCESS_NAME" == "Suricata-Main" ]; then
   	SUM_KERN_DROPS=$(echo "${KERN_DROPS[*]}"|bc)
@@ -209,8 +210,8 @@ function buildFinalStats {
 		KERN_DROPS_PERCENT=$(bc <<< "scale=2; $SUM_KERN_DROPS / $RX_PKTS_TOTAL * 100")
 	elif [ "$PROCESS_NAME" == "tcpdump" ]; then
 		AVG_KERN_DROPS=NA
-		SUM_KERN_DROPS=$(cat /experiment/counters | awk ' FNR == 4 {print $1}')
-		KERN_DROPS_PERCENT=$(bc <<< "scale=3; $SUM_KERN_DROPS / $RX_PKTS_TOTAL")
+		SUM_KERN_DROPS=$(cat counters | awk ' FNR == 4 {print $1}')
+		KERN_DROPS_PERCENT=$(bc <<< "scale=3; $SUM_KERN_DROPS / $RX_PKTS_TOTAL") #Percent dropped after making it past the first round...
 		rm -rf counters
 		rm -rf tcpdump.pid
 	else
@@ -223,7 +224,7 @@ function buildFinalStats {
 
 	SUM_IFACE_DROPS=$(echo "${IFACE_DROPS[*]}"|bc)
 	AVG_IFACE_DROPS=$(echo "(${IFACE_DROPS[*]}) / (${#IFACE_DROPS[*]} - $(echo ${IFACE_DROPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
-	IFACE_DROPS_PERCENT=$(bc <<< "scale=2; $SUM_IFACE_DROPS / $RX_PKTS_TOTAL * 100")
+	IFACE_DROPS_PERCENT=$(bc <<< "scale=2; $SUM_IFACE_DROPS / $PACKETS_EXPECTED * 100")
 	AVG_RXPPS=$(echo "(${RXPPS[*]}) / (${#RXPPS[*]} - $(echo ${RXPPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
 	AVG_RXBPS=$(echo "(${RXBPS[*]}) / (${#RXBPS[*]} - $(echo ${RXBPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
 	AVG_PID_MEM_PERCENT=$(echo "scale=1; (${PID_MEM_PERCENT[*]}) / (${#PID_MEM_PERCENT[*]} - $(echo ${PID_MEM_PERCENT[*]} | grep -ow '0.0' | wc -l))"|bc 2> /dev/null)
@@ -275,9 +276,9 @@ function finish {
 	$MAX_RXBPS,$SUM_IFACE_DROPS,$AVG_IFACE_DROPS,$IFACE_DROPS_PERCENT,$SUM_KERN_DROPS,$AVG_KERN_DROPS,$TUNING_FACTORS >> "$HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv"
 
 
-	echo "total packets: $RX_PKTS_TOTAL"
-	echo "Iface Drops: $SUM_IFACE_DROPS $IFACE_DROPS_PERCENT%"
-	echo "kern drops: $SUM_KERN_DROPS $KERN_DROPS_PERCENT%"
+	echo "Total packets past kernel phase: $RX_PKTS_TOTAL"
+	#echo "Iface Drops: $SUM_IFACE_DROPS $IFACE_DROPS_PERCENT%"
+	#echo "kern drops: $SUM_KERN_DROPS $KERN_DROPS_PERCENT%"
 
 	(head -n2 && tail -n1) < $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv | column -t -s ,
 	#column -t -s , $HOSTNAME-$NIC_DRIVER-$PROCESS_NAME-results.csv
