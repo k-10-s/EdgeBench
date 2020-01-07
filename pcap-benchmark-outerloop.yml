@@ -1,0 +1,44 @@
+#This playbook is the "outer" loop 
+- name: Reboot to Defaults. Begining Factor {{current_factor_list}} ({{ansible_loop.index}} of {{ansible_loop.length}})
+  reboot:
+  become: yes
+   tags: skippable
+
+- name: Set Static Controls
+  include_tasks: pcap-static-controls.yml
+
+- name: Set Variable Factor Controls
+  include_tasks: pcap-variable-controls.yml
+
+- name: Copy Performance Monitor
+  copy:
+    src: gather_stats.bash
+    dest: "{{sensor_dir}}/gather_stats.bash"
+    mode: '0755'
+
+  #-run repeats
+- name: Begin Inner Loop
+  include_tasks: pcap-benchmark-innerloop.yml
+  loop: "{{ replicates }}"
+  loop_control:
+    extended: yes
+    loop_var: inner_counter
+    index_var: inner_idx
+
+- name: End of Run ANOVA Test
+  local_action:
+    module: shell
+    _raw_params: |
+        python best-mean.py 'results/{{ inventory_hostname }}-{{capture_driver}}-tcpdump-results-run{{test_counter}}.csv' kerndrop,sum "{{target_to_beat}}"
+  register: anova
+  tags: anova
+  #if the last item in loop and not inital run
+  when: "ansible_loop.revindex == 1 and test_counter > 1"
+  changed_when: false
+  ignore_errors: yes
+
+- name: Update Last Loop Best
+  set_fact:
+   last_loop_best: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
+  when: "ansible_loop.revindex == 1 and test_counter > 1" 
+

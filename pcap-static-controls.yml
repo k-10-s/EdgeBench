@@ -1,0 +1,69 @@
+  ###Blanket Optimizations (always apply to all)
+
+- name: Set Receive Offloads
+  command: "ethtool -K {{ capture_interface }} lro {{ lro_status }} gro {{ gro_status }} rx {{ rx_checksum_status }}"
+  become: yes
+
+- name: Enable Capture Interface and Set Promiscuous
+  shell: |
+    ifconfig {{ capture_interface }} promisc
+    ifconfig {{ capture_interface }} up
+  become: yes
+
+  #Multiple rx queues dont make much sense on small boards where the IRQs cant be remapped
+  #the SMP affinity for all of them hits the same core, making it worse
+- name: Limit Number of Hardware Queues
+  shell: ethtool -L {{capture_interface}} rx 1
+  become: yes
+  ignore_errors: yes
+  register: queues_result
+  failed_when: "'Invalid argument' in queues_result.stderr"
+
+  #When Disk I/O is very important. Also lifetime of flash...
+- name: Disable Swap 
+  shell: swapoff -a
+  become: yes
+  #when: "'nvidia' not in group_names"
+
+- name: Bump RPi Throttling Temp (3B+ only)
+  lineinfile:
+    path: /boot/config.txt
+    regex: "temp_soft_limit="
+    line: temp_soft_limit=70.0
+  when: "'nvidia' not in group_names"
+  become: yes
+
+- name: Disable Flow Control On Send Interface
+  local_action:
+      module: shell
+      _raw_params: sudo ethtool -A {{ send_interface }} autoneg off tx off rx off
+      args:
+          warn: false
+  #ignore_errors: yes
+  register: local_result
+  failed_when: "'Cannot' in local_result.stderr"
+
+- name: Disable Offloads on Send Interface
+  local_action:
+      module: shell
+      _raw_params: "sudo ethtool -K {{ send_interface }} gso off tso off gro off lro off tx off"
+      args:
+          warn: false
+
+- name: Set RX Packet Timestamping
+  shell: sysctl -w net.core.netdev_tstamp_prequeue={{ rx_timestamp_status }}
+  become: yes
+
+  #https://www.kernel.org/doc/Documentation/networking/scaling.txt
+  #Has some bugs. Probably a better way. Doesnt seem to apply much to ARM boards
+#- name: Determine CPU serving NIC Interrupts
+#  shell: cat /proc/interrupts | grep -oP "\d+:\s+\K(.+)(?={{capture_interface}})" | tr -s [:space:] "\n" | head -$(grep -c ^processor /proc/cpuinfo) | cat -n | sort -k2rn | head -1 | cut -b5-6
+#  register: irq_affinity
+#  changed_when: false
+
+- name: Enable / Set Receive Packet Steering Affinity with Mask {{ rps_mask }}
+  #shell: "echo {{ bitmasks[irq_affinity.stdout_lines|int] }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
+  #All the ARM boards tested so far use CPU0 for interrupts (the cpu that booted the kernel)
+  shell: "echo {{ rps_mask }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
+  become: yes
+  ignore_errors: yes
