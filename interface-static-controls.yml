@@ -20,10 +20,9 @@
   failed_when: "'Invalid argument' in queues_result.stderr"
 
   #When Disk I/O is very important. Also lifetime of flash...
-- name: Disable swap on RPis
+- name: Disable Swap
   shell: swapoff -a
   become: yes
-  when: "'nvidia' not in group_names"
 
 - name: Bump RPi Throttling Temp (3B+ only)
   lineinfile:
@@ -32,6 +31,13 @@
     line: temp_soft_limit=70.0
   when: "'nvidia' not in group_names"
   become: yes
+
+- name: Set MAXN Power Profile on NVIDIA Boards
+  shell: |
+    nvpmodel -m 0
+    jetson_clocks
+  become: yes
+  when: "'nvidia' in group_names"
 
 - name: Disable Flow Control On Send Interface
   local_action:
@@ -50,20 +56,12 @@
       args:
           warn: false
 
-- name: Set RX Packet Timestamping
-  shell: sysctl -w net.core.netdev_tstamp_prequeue={{ rx_timestamp_status }}
-  become: yes
 
-  #https://www.kernel.org/doc/Documentation/networking/scaling.txt
-  #Has some bugs. Probably a better way. Doesnt seem to apply much to ARM boards
-#- name: Determine CPU serving NIC Interrupts
-#  shell: cat /proc/interrupts | grep -oP "\d+:\s+\K(.+)(?={{capture_interface}})" | tr -s [:space:] "\n" | head -$(grep -c ^processor /proc/cpuinfo) | cat -n | sort -k2rn | head -1 | cut -b5-6
-#  register: irq_affinity
-#  changed_when: false
-
-- name: Enable / Set Receive Packet Steering Affinity with Mask {{ rps_mask }}
-  #shell: "echo {{ bitmasks[irq_affinity.stdout_lines|int] }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
-  #All the ARM boards tested so far use CPU0 for interrupts (the cpu that booted the kernel)
+- name: Enable / Set Receive Packet Steering Affinity Mask
   shell: "echo {{ rps_mask }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
   become: yes
   ignore_errors: yes
+
+- name: Set RX Packet Timestamping
+  shell: sysctl -w net.core.netdev_tstamp_prequeue={{ rx_timestamp_status }}
+  become: yes

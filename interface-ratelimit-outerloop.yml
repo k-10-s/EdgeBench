@@ -1,22 +1,25 @@
-
-- name: Reboot to Defaults. Begining Factor {{current_factor_list}} ({{ansible_loop.index}} of {{ansible_loop.length}})
+#This playbook is the "outer" loop
+- name: Reboot to Defaults. Beginning Factor {{current_factor_list}} ({{ansible_loop.index}} of {{ansible_loop.length}})
   reboot:
   become: yes
   tags: skippable
 
 - name: Set Static Controls
   include_tasks: interface-static-controls.yml
+  tags: workload
 
 - name: Set Variable Factor Controls
   include_tasks: interface-variable-controls.yml
+  tags: workload
 
 - name: Copy Performance Monitor
   copy:
     src: gather_stats.bash
     dest: "{{sensor_dir}}/gather_stats.bash"
     mode: '0755'
+  tags: workload
 
-  #Run replicates
+  #Run repeats
 - name: Begin Inner Loop
   include_tasks: interface-ratelimit-innerloop.yml
   loop: "{{ replicates }}"
@@ -24,6 +27,7 @@
     extended: yes
     loop_var: inner_counter
     index_var: inner_idx
+  tags: workload
 
 - name: End of Run Best Mean Test {{test_counter}}
   local_action:
@@ -32,6 +36,7 @@
         python best-mean.py 'results/{{ inventory_hostname }}-{{capture_driver}}-ksoftirqd0-results-run{{test_counter}}.csv' nicdrop,avg {{target_to_beat}}
   register: anova
   tags: anova
+ #if the last item in loop and not inital run
   when: "ansible_loop.revindex == 1 and test_counter > 1"
   changed_when: false
   ignore_errors: yes
@@ -39,4 +44,8 @@
 - name: Update Last Loop Best
   set_fact:
    last_loop_best: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
+   significant_factors_array: "{{anova.stdout_lines[anova.stdout_lines|length -1].split(\",\")}}"
+   significant_factors_string: "{{anova.stdout_lines[anova.stdout_lines|length -1]}}"
+   significant_factors_history: "{{significant_factors_history}} + [ '{{anova.stdout_lines[anova.stdout_lines|length -1]}}' ]"
+   last_loop_best_history: "{{last_loop_best_history}} + [ '{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}' ]"
   when: "ansible_loop.revindex == 1 and test_counter > 1"
