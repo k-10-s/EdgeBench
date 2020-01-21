@@ -19,7 +19,7 @@ if [ -z "$4" ]; then
 	echo "**sudo access required**"
 	exit 1
 elif [ -z "$5" ]; then
-	TOTAL_RUNTIME=60 
+	TOTAL_RUNTIME=60
 	TUNING_FACTORS=N
 elif [ -z "$6" ]; then
 	TOTAL_RUNTIME=$(( $PACKETS_EXPECTED / $PPS + 5 )) #plus for cooldown buffer
@@ -47,7 +47,7 @@ if [ $PID -lt '0' ]; then
 	PID=$(top -b -n1 | grep ksoftirq | head -1 | awk '{ print $1 }');
 	PROCESS_NAME=ksoftirqd0;
 elif [ ! -d /proc/$PID ]; then
-	echo "supplied PID isn't running, exiting";
+	echo "supplied PID $PID isn't running, exiting";
 	exit 1;
 else PROCESS_NAME=$(ps -p $PID -o comm=); fi
 
@@ -126,7 +126,11 @@ function captureLap {
 
 	#Specific to suricata...
 	if [ "$PROCESS_NAME" == "Suricata-Main" ]; then
-		KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | awk '{ print $5 }'| egrep -o [0-9]+)
+		if [ "$DEVICE_FAM" == 'nvidia-tx1' ]; then
+			KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | awk '{ print $5 }'| egrep -o [0-9]+) #some sort of version mismatch...
+		else
+			KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | awk '{ print $7 }'| egrep -o [0-9]+)
+		fi
 		KERN_DROPS[$LOOP_COUNT]=$(bc <<< "scale=0; ($KERN_DROP_NOW - $KERN_DROP_LAST) / $LOOP_TIME_REAL  ")
 		KERN_DROP_LAST=$KERN_DROP_NOW
 	else
@@ -198,15 +202,18 @@ function buildFinalStats {
 	MAX_RXBPS=$(echo "${RXBPS[*]}" | sort -nr | head -1)
 	MAX_RXPPS=$(echo "${RXPPS[*]}" | sort -nr | head -1)
 
-	#Averages. Have to count the number of zeros in the array so they dont throw off averages
+	#Averages. 
+	#Zeros may throw off averages if they're not likely (fully overloaded,etc) 
+	#Can count the number of zeros in the array so they dont throw off averages
 	#( All items in array / (Array size - zero count) )
 	IFS='+'
 	(( RX_PKTS_TOTAL=RX_PKTS_LAST-RX_PKTS_FIRST ))
-	
-	#currently only suricata gives access to real time kernel drops
+
+	#currently only suricata gives access to real time kernel drops. dont remove zeros
 	if [ "$PROCESS_NAME" == "Suricata-Main" ]; then
-  	SUM_KERN_DROPS=$(echo "${KERN_DROPS[*]}"|bc)
-		AVG_KERN_DROPS=$(echo "(${KERN_DROPS[*]}) / (${#KERN_DROPS[*]} - $(echo ${KERN_DROPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)
+		SUM_KERN_DROPS=$(echo "${KERN_DROPS[*]}"|bc)
+		echo "kern drop number: ${#KERN_DROPS[@]}"
+		AVG_KERN_DROPS=$(echo "(${KERN_DROPS[*]}) / ${#KERN_DROPS[@]}" | bc 2> /dev/null)
 		KERN_DROPS_PERCENT=$(bc <<< "scale=2; $SUM_KERN_DROPS / $RX_PKTS_TOTAL * 100")
 	elif [ "$PROCESS_NAME" == "tcpdump" ]; then
 		AVG_KERN_DROPS=NA
@@ -219,8 +226,6 @@ function buildFinalStats {
 		SUM_KERN_DROPS=NA
 		KERN_DROPS_PERCENT=NA
 	fi
-
-	
 
 	SUM_IFACE_DROPS=$(echo "${IFACE_DROPS[*]}"|bc)
 	AVG_IFACE_DROPS=$(echo "(${IFACE_DROPS[*]}) / (${#IFACE_DROPS[*]} - $(echo ${IFACE_DROPS[*]} | grep -ow '0' | wc -l))"|bc 2> /dev/null)

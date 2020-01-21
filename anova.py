@@ -225,21 +225,21 @@ MSE = mean_squares[num_effects]
 
 #F-values
 f_vals = np.ones(num_elements)
-f_vals[num_effects:] = 0
+f_vals[num_effects:] = -1
 f_crits = np.ones(num_elements)
-f_crits[num_effects:] = 0
+f_crits[num_effects:] = -1
 
 #P-values
 p_vals = np.ones(num_elements)
-p_vals[num_effects:] = 0
+p_vals[num_effects:] = -1
 
 #Effect Estimates
 effects = np.ones(num_elements)
-effects[num_effects:] = 0
+effects[num_effects:] = -1
 
 #Response variable averages
 means = np.ones(num_elements)
-means[num_effects:] = 0
+means[num_effects:] = -1
 
 #Build datafile
 for i in range(num_effects):
@@ -252,14 +252,12 @@ for i in range(num_effects):
 
 anova_df_numpy = np.array([means, effects, sum_squares, DF, mean_squares, f_vals, f_crits, p_vals])
 anova_df_pandas = pd.DataFrame(data=anova_df_numpy.T, index=df_index, columns=['Sample Mean','Effect Est.','Sum of Squares', 'df', 'Mean Square', 'F0', 'F Threshold', 'p-value'])
-anova_df_pandas = anova_df_pandas.replace(to_replace=0,value='')
+anova_df_pandas = anova_df_pandas.replace(to_replace=-1,value='')
 
 #The deprecated function. Changes p-value to float64 so it can be rounded properly
 anova_df_pandas['p-value']= anova_df_pandas['p-value'].convert_objects(convert_numeric=True)
 print("Unoptimized Mean: " + str(np.mean(one)))
 print(anova_df_pandas.round(5))
-
-#anova_df_pandas.to_excel("output.xlsx")
 
 ##Significant Factors Only
 significant_factors = anova_df_pandas[(anova_df_pandas['p-value'] < alpha)].round(5)
@@ -273,14 +271,13 @@ if significant_factors.empty == False:
 anova_df_pandas.to_csv("results/anova/" + sys.argv[6]+"-"+rv[0]+"-"+rv[1]+"-all-anova-output-" + sys.argv[1][-8:-4] + ".csv")
 
 
-
-
 if candidiate_factors.empty == False:
 	print("\nSignificant Factors (alpha = " + str(alpha) + ")")
 	#Only want negative (good) effects
 	print(significant_factors[(significant_factors['Effect Est.'] < 0)].sort_values(by=['Sample Mean']))
 	#It better be less then the unoptimized mean...
-	candidiate_factors_index = candidiate_factors[(candidiate_factors['Sample Mean'] < np.mean(one))].sort_values(by=['Sample Mean']).index.array
+	#candidiate_factors_index = candidiate_factors[(candidiate_factors['Sample Mean'] < np.mean(one))].sort_values(by=['Sample Mean']).index.array
+	candidiate_factors_index = candidiate_factors.sort_values(by=['Sample Mean']).index.array
 
 	for x in candidiate_factors_index:
 		if len(x) > len(longest):
@@ -313,11 +310,11 @@ else:
 	#Take the factor combo with the best sample mean and keep trying
 	print("Lowest observed sample mean (target to beat)")
 	print(int(anova_df_pandas[(anova_df_pandas['Sample Mean'] < np.mean(one))]['Sample Mean'].min()))
-	print("Next best guesses")
+	print("Next best guesses (produced a sample mean lower than unoptimized)")
 
 if len(all) == 0:
-	print("NONE") #I shouldnt get here...
-else
+	print("NONE - ERROR") #I shouldnt get here...
+else:
 	print(all.rstrip(','))
 
 #Normplot of effects
