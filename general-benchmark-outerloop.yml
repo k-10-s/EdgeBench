@@ -1,17 +1,17 @@
 #This playbook is the "outer" loop 
-- name: Reboot to Defaults. Begining Factor {{current_factor_list}} ({{ansible_loop.index}} of {{ansible_loop.length}})
+- name: Reboot to Defaults. Beginning Factor {{current_factor_list}} ({{ansible_loop.index}} of {{ansible_loop.length}})
   reboot:
   become: yes
-  tags: discover
+  tags: skippable
 
   #If any configuration changes are not undone with a reboot,
   #add a playbook here to manually "revert" them
 
 - name: Set Static Controls
-  include_tasks: static-controls.yml
+  include_tasks: general-static-controls.yml
 
 - name: Set Variable Factor Controls
-  include_tasks: variable-controls.yml
+  include_tasks: general-variable-controls.yml
 
 - name: Copy Performance Monitor
   copy:
@@ -19,7 +19,7 @@
     dest: "{{experiment_dir}}/gather_stats.bash"
     mode: '0755'
 
-  #-run repeats
+  #Run repeats
 - name: Begin Inner Loop
   include_tasks: general-benchmark-innerloop.yml
   loop: "{{ replicates }}"
@@ -27,9 +27,9 @@
     extended: yes
     loop_var: inner_counter
     index_var: inner_idx
-  tags: discover
-
-- name: End of Run ANOVA Test
+  tags: workload
+  
+- name: End of Run Best Mean Test {{test_counter}}
   local_action:
     module: shell
     _raw_params: |
@@ -44,5 +44,9 @@
 - name: Update Last Loop Best
   set_fact:
    last_loop_best: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
-  when: "ansible_loop.revindex == 1 and test_counter > 1" 
+   significant_factors_array: "{{anova.stdout_lines[anova.stdout_lines|length -1].split(\",\")}}"
+   significant_factors_string: "{{anova.stdout_lines[anova.stdout_lines|length -1]}}"
+   significant_factors_history: "{{significant_factors_history}} + [ '{{anova.stdout_lines[anova.stdout_lines|length -1]}}' ]"
+   last_loop_best_history: "{{last_loop_best_history}} + [ '{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}' ]"
+  when: "ansible_loop.revindex == 1 and test_counter > 1"
 
