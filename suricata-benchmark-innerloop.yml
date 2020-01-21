@@ -1,0 +1,99 @@
+#This playbook is the "inner" loop
+
+#<<workload begin>>#
+  - name: Clean up possible stalled engines
+    shell: killall Suricata-Main; rm -rf "{{sensor_dir}}"/suricata.pid
+    become: yes
+    #ignore_errors: yes
+
+  - name: Begin Suricata
+    shell: LD_LIBRARY_PATH=/usr/lib /usr/bin/suricata -c "{{sensor_dir}}"/suricata.yml -i "{{capture_interface}}" --pidfile "{{sensor_dir}}"/suricata.pid
+    register: suricata_async
+    become: yes
+    poll: 0
+    async: 360
+
+  - name: Wait for Warmup
+    command: /bin/sleep 30
+    async: 45
+    poll: 5
+    changed_when: false
+
+  - name: Launch Performance Monitor (Factors {{ current_factor_list }})
+    shell: "./gather_stats.bash {{ interface_pps_limit }} $(cat {{sensor_dir}}/suricata.pid) {{ capture_interface }} 1 {{ num_packets_cic_monday }} {{ current_factor_list }}"
+    args:
+      chdir: "{{ sensor_dir }}/"
+    register: results_async
+    poll: 0
+    async: 3600
+    become: yes
+    changed_when: false
+
+  - name: Send Traffic via tcpreplay ({{ num_packets_cic_monday }} packets at varrying per second. Run {{ansible_loop.index}} of {{ansible_loop.length}})
+    local_action:
+        module: shell
+        _raw_params: sudo tcpreplay -i {{ send_interface }} -p {{ interface_pps_limit }} -L {{num_packets_cic_monday}} {{generator_dir}}/Monday-WorkingHours-Fixed.pcap
+        warn: false
+    ignore_errors: yes
+    register: sender
+
+#<<workload end>>#
+
+  - debug:
+        var: sender.stdout
+
+  - name: Stop Everything
+    shell: |
+        killall Suricata-Main
+        kill "$(cat gather.pid)"
+    args:
+      chdir: "{{ sensor_dir }}"
+    become: yes
+    ignore_errors: yes
+    retries: 30
+    failed_when: false
+
+  - name: Wait for Suricata Shutdown
+    async_status: jid="{{ suricata_async.ansible_job_id }}"
+    become: yes
+    register: suricata
+    until: suricata.finished
+    retries: 30
+    failed_when: false
+    ignore_errors: yes
+
+
+  - name: Wait for Results
+    async_status: jid="{{ results_async.ansible_job_id }}"
+    become: yes
+    register: results
+    until: results.finished
+    retries: 30
+    failed_when: false
+    ignore_errors: yes
+
+  - name: Copy Verbose Results
+    fetch:
+      src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results-verbose.csv"
+      dest: "results/verbose/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results-run{{test_counter}}-verbose.csv"
+      flat: yes
+    changed_when: false
+
+  - name: Store Generator Stats
+    local_action:
+        module: shell
+        _raw_params: |
+            echo "{{interface_pps_limit}} --" >> "results/verbose/{{send_interface}}-to-{{inventory_hostname}}".log
+            echo "{{sender.stdout}}" | tail -2 >> "results/verbose/{{send_interface}}-to-{{inventory_hostname}}".log
+    ignore_errors: yes
+
+  - name: Copy Totals
+    fetch:
+      src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results.csv"
+      dest: "results/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results-run{{test_counter}}.csv"
+      flat: yes
+    changed_when: false
+
+  - name: Display Running Results
+    debug:
+        var: results.stdout

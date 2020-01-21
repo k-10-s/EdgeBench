@@ -1,0 +1,66 @@
+ ##FACTORS UNDER EXPERIMENT
+
+  ###FACTOR A###
+- name: (Factor A) Set Suricata Runmode to {{ suricata_runmode }} 
+  lineinfile:
+      path: "{{sensor_dir}}/suricata.yml"
+      state: present
+      regexp: '^#runmode: '
+      line: "runmode: {{ suricata_runmode }}"
+  when: "'A' in current_factor_list" 
+   
+   ###FACTOR B###
+- name: Reset Suricata Max Pending Size Variable
+  set_fact:
+   suricata_max_pending_fact: 1024 #the default
+
+- name: (Factor B) Set Suricata Max Pending Packets to {{ suricata_max_pending|int * loop_multiplier|int }}
+  set_fact:
+      suricata_max_pending_fact: "{{ suricata_max_pending|int * loop_multiplier|int }}"
+  when: "'B' in current_factor_list"   
+   
+  #Engine maximum
+- name: (Factor B) Cap Oversized Max Pending Packets
+  set_fact:
+      suricata_max_pending_fact: "65534"
+  when: "suricata_max_pending_fact | int > 65534"     
+   
+- name: (Factor B) Set Max-Pending-Packets to {{ suricata_max_pending_fact }}
+  lineinfile:
+    path: "{{sensor_dir}}/suricata.yml"
+    state: present
+    regexp: 'max-pending-packets: 1024'
+    line: "max-pending-packets: {{ suricata_max_pending_fact }}"
+  when: "'B' in current_factor_list" 
+   
+- debug:
+    msg: "Max-Pending-Packets: {{suricata_max_pending_fact}}"
+   
+  ###FACTOR C###
+- name: (Factor C) Set Detect Profile to {{ suricata_detect_profile }}
+  lineinfile:
+    path: "{{sensor_dir}}/suricata.yml"
+    state: present
+    regexp: '  profile: medium'
+    line: "  profile: {{ suricata_detect_profile }}"
+  when: "'C' in current_factor_list" 
+ 
+  ###FACTOR D###
+- name: (Factor D) Set Receive Flow Steering (RFS) Table Size to {{rfs_table|int*loop_multiplier|int}}
+  shell: |
+    sysctl -w net.core.rps_sock_flow_entries="{{ rfs_table|int*loop_multiplier|int }}"
+    echo "{{ rfs_flow_cnt|int*loop_multiplier|int }}" > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_flow_cnt
+  become: yes
+  ignore_errors: yes
+  when: "'D' in current_factor_list"
+  
+  ###FACTOR E###
+- name: (Factor E) Set af_packet Memory Map Option to {{af_packet_mmap}}
+  lineinfile:
+    path: "{{sensor_dir}}/suricata.yml"
+    state: present
+    regexp: '    #use-mmap: yes'
+    line: "    use-mmap: {{af_packet_mmap}}"
+  when: "'E' in current_factor_list" 
+  
+  

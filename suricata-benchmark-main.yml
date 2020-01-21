@@ -1,0 +1,122 @@
+#This playbook acts as the "main" function
+#It has to be its own file since the "tasks:" keyword
+#can only appear once within all the loops
+- name: Suricata Benchmark Experiment
+  connection: ssh
+  hosts: all
+  vars_files: vars.yml
+  gather_facts: true
+
+  tasks:
+    - name: Determine Capture suricata Driver
+      shell: "ethtool -i {{capture_interface}} | awk 'NR == 1 {print $2}'"
+      register: capture_interface_driver
+      changed_when: false
+      become: yes
+      when: capture_driver is not defined
+
+    - name: Set Capture Driver Fact
+      set_fact:
+        capture_driver: "{{capture_interface_driver.stdout_lines[0]}}"
+        cacheable: yes
+      when: capture_driver is not defined
+
+    - name: Record Initial Variable Levels
+      set_fact:
+        A_levels: "{{A_levels}} + [ 'autofp' ]"
+        B_levels: "{{B_levels}} + [ '1024' ]"
+        C_levels: "{{C_levels}} + [ 'medium' ]"
+        D_levels: "{{D_levels}} + [ '0' ]"
+        E_levels: "{{E_levels}} + [ 'no' ]"
+
+    - name: Clean Up old Results
+      shell: |
+          rm -rf {{ sensor_dir }}/*.csv
+          rm -rf {{ sensor_dir }}/*.pid
+          rm -rf {{ sensor_dir }}/log/*.log
+      args:
+          warn: false
+      become: yes
+
+    - name: Re-base Suricata Ruleset
+      copy:
+        src: suricata.rules
+        dest: "{{sensor_dir}}/suricata.rules"
+        mode: '0777'
+
+    - name: Re-base Suricata Threshold File
+      copy:
+        src: threshold.config
+        dest: "{{sensor_dir}}/threshold.config"
+        mode: '0777'
+
+
+    - name: Begin New Test
+      include_tasks: suricata-benchmark-recursive.yml
+
+    - name: Done Looping, Store Final Result
+      set_fact:
+        suricata_pps_limit: "{{interface_pps_limit|int - target_to_beat|int}}"
+        suricata_runmode_best: "{{ A_levels[-1] }}"
+        suricata_max_pending_best: "{{ B_levels[-1] }}"
+        suricata_detect_profile_best: "{{ C_levels[-1] }}"
+        rfs_best: "{{ D_levels[-1] }}"
+        af_packet_mmap_best: "{{ E_levels[-1] }}"
+        cacheable: yes
+
+    - name: Store Results File
+      local_action:
+          module: shell
+          _raw_params: |
+              echo "{{inventory_hostname}} Suricata Test Final"\
+              > results/"{{inventory_hostname}}"-suricata-final.log
+
+              echo "- A levels: {{ A_levels | to_yaml }}\
+              - B levels: {{ B_levels | to_yaml }}\
+              - C levels: {{ C_levels | to_yaml }}\
+              - D levels: {{ D_levels | to_yaml }}\
+              - E levels: {{ E_levels | to_yaml }}"\
+              >> results/"{{inventory_hostname}}"-suricata-final.log
+
+              echo "- Runmode (A): {{ suricata_runmode_best | to_yaml }}\
+              - Max Pending Packets (B): {{ suricata_max_pending_best | to_yaml }}\
+              - Detect Profile (C): {{ suricata_detect_profile_best | to_yaml }}\
+              - RFS Table Size (D): {{ rfs_best | to_yaml }}\
+              - Memory Map Option (E): {{ af_packet_mmap_best | to_yaml }}"\
+              >> results/"{{inventory_hostname}}"-suricata-final.log
+
+              echo "- Number of Loops: {{ test_counter | to_yaml }}\
+              - Factor History: {{ significant_factors_history | to_yaml }}\
+              - Loop Bests: {{ last_loop_best_history | to_yaml }}\
+              - suricata PPS Limit: {{suricata_pps_limit}}"\
+               >> results/"{{inventory_hostname}}"-suricata-final.log
+      ignore_errors: yes
+
+
+    - name: List Variable States
+      debug:
+        msg: "
+        - A levels: {{ A_levels | to_yaml }}
+        - B levels: {{ B_levels | to_yaml }}
+        - C levels: {{ C_levels | to_yaml }}
+        - D levels: {{ D_levels | to_yaml }}
+        - E levels: {{ E_levels | to_yaml }}"
+
+    - name: List Factor History
+      debug:
+        msg: "
+        - Number of Loops: {{ test_counter | to_yaml }}
+        - Factor History: {{ significant_factors_history | to_yaml }}"
+
+    - name: Final Optimization Results
+      debug:
+        msg: "
+        - Runmode (A): {{ suricata_runmode_best | to_yaml }}
+        - Max Pending Packets (B): {{ suricata_max_pending_best | to_yaml }}
+        - Detect Profile (C): {{ suricata_detect_profile_best | to_yaml }}
+        - RFS Table Size (D): {{ rfs_best | to_yaml }}
+        - Memory Map Option (E): {{ af_packet_mmap_best | to_yaml }}"
+
+    - name: Final Result
+      debug:
+        msg: "Suricata PPS Limit: {{ suricata_pps_limit }}"
