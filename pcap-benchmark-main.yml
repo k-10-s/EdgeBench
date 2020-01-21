@@ -21,6 +21,20 @@
         cacheable: yes
       when: capture_driver is not defined
 
+#    - name: Inherit Previous Results
+#      set_fact:
+#        rmem_max: "{{rmem_best}}"
+#        NAPI_budget_best
+#        backlog_weight: "{{backlog_weight_best}}"
+#      when: rmem_max_best is defined and backlog_weight_best is defined
+
+    - name: Record Initial Variable Levels
+      set_fact:
+        A_levels: "{{A_levels}} + [ '2000' ]"
+        B_levels: "{{B_levels}} + [ '212992' ]"
+        C_levels: "{{C_levels}} + [ '64' ]"
+        D_levels: "{{D_levels}} + [ '0' ]"
+
     - name: Clean Up old Results
       shell: |
           rm -rf {{ sensor_dir }}/*.csv
@@ -29,19 +43,67 @@
       args:
           warn: false
       become: yes
-      
+
     - name: Begin New Test
       include_tasks: pcap-benchmark-recursive.yml
 
-    - name: Done Looping, Store Final Result
+    - name: Done Looping, Store Final Result Facts
       set_fact:
-        pcap_pps_limit: "{{interface_pps_limit|int - target_to_beat|int}}"
+        pcap_pps_limit: "{{interface_pps_limit|int - ( target_to_beat|int / 30 ) }}" #Best sum of drops / 30 sec 
+        libpcap_buffer_best: "{{ A_levels[-1] }}"
+        rmem_best: "{{ B_levels[-1] }}"
+        backlog_weight_best: "{{ C_levels[-1] }}"
+        rfs_best: "{{ D_levels[-1] }}"
         cacheable: yes
 
-    - name: List Variable Final States
+    - name: Store Results File
+      local_action:
+          module: shell
+          _raw_params: |
+              echo "{{inventory_hostname}} PCAP Test Final"\
+              > results/"{{inventory_hostname}}"-pcap-final.log
+
+              echo "- A levels: {{ A_levels | to_yaml }}\
+              - B levels: {{ B_levels | to_yaml }}\
+              - C levels: {{ C_levels | to_yaml }}\
+              - D levels: {{ D_levels | to_yaml }}"\
+              >> results/"{{inventory_hostname}}"-pcap-final.log
+
+              echo "- libpcap Buffer (A): {{ libpcap_buffer_best | to_yaml }}\
+              - Socket queue mem (B): {{ rmem_best | to_yaml }}\
+              - Backlog poll weight (C): {{ backlog_weight_best | to_yaml }}\
+              - RFS Table Size (D): {{ rfs_best | to_yaml }}"\
+              >> results/"{{inventory_hostname}}"-pcap-final.log
+
+              echo "- Number of Loops: {{ test_counter | to_yaml }}\
+              - Factor History: {{ significant_factors_history | to_yaml }}\
+              - Loop Bests: {{ last_loop_best_history | to_yaml }}\
+              - PCAP PPS Limit: {{pcap_pps_limit}}"\
+               >> results/"{{inventory_hostname}}"-pcap-final.log
+      ignore_errors: yes
+
+    - name: List Variable States
       debug:
-        msg: "A levels: {{ A_level | to_yaml }} - B levels: {{ B_level | to_yaml }} - C levels: {{ C_level | to_yaml }} - D levels: {{ D_level | to_yaml }} - E levels: {{ E_level | to_yaml }}"
+        msg: "
+        - A levels: {{ A_levels | to_yaml }}
+        - B levels: {{ B_levels | to_yaml }}
+        - C levels: {{ C_levels | to_yaml }}
+        - D levels: {{ D_levels | to_yaml }}"
+
+    - name: List Factor History
+      debug:
+        msg: "
+        - Number of Loops: {{ test_counter | to_yaml }}
+        - Factor History: {{ significant_factors_history | to_yaml }}"
+
+    - name: Final Optimization Results
+      debug:
+        msg: "
+        - libpcap Buffer (A): {{ libpcap_buffer_best | to_yaml }}
+        - Socket queue mem (B): {{ rmem_best | to_yaml }}
+        - Backlog poll weight (C): {{ backlog_weight_best | to_yaml }}
+        - RFS Table Size (D): {{ rfs_best | to_yaml }}"
 
     - name: Display Final Result
       debug:
-        msg: "Packet captue PPS Limit: {{ pcap_pps_limit }}"
+        msg: "Packet capture PPS Limit: {{ pcap_pps_limit }}"

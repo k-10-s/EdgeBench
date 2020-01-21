@@ -1,9 +1,9 @@
 #This playbook is the "inner" loop
-  
-#<<workload begin>>#  
-  
+
+#<<workload begin>>#
+
   - name: Begin tcpdump #will time out after an hour
-    shell: tcpdump -i {{ capture_interface }} -B {{ buffer_size }} -n -w {{sensor_dir}}/rate_test.pcap 2> {{sensor_dir}}/counters & echo $! > {{sensor_dir}}/tcpdump.pid
+    shell: tcpdump -i {{ capture_interface }} -B {{ libpcap_buffer_size }} -n -w {{sensor_dir}}/rate_test.pcap 2> {{sensor_dir}}/counters & echo $! > {{sensor_dir}}/tcpdump.pid
     become: yes
     poll: 0
     async: 36000
@@ -13,9 +13,9 @@
     async: 45
     poll: 5
     changed_when: false
-  
+
   - name: Launch Performance Monitor (Factors {{ current_factor_list }})
-    shell: "./gather_stats.bash {{ interface_pps_limit }} $(cat {{sensor_dir}}/tcpdump.pid) {{ capture_interface }} 1 {{ num_packets }} {{ current_factor_list }}"
+    shell: "./gather_stats.bash {{ interface_pps_limit }} $(cat {{sensor_dir}}/tcpdump.pid) {{ capture_interface }} 1 {{ num_packets_cic_monday }} {{ current_factor_list }}"
     args:
       chdir: "{{ sensor_dir }}/"
     register: results_async
@@ -25,23 +25,31 @@
     changed_when: false
 
 
-  - name: Send Traffic via tcpreplay ({{ num_packets }} packets at {{ interface_pps_limit }} per second. Run {{ansible_loop.index}} of {{ansible_loop.length}})
+#  - name: Send Traffic via tcpreplay ({{ num_packets_cic_monday }} packets at {{ interface_pps_limit }} per second. Run {{ansible_loop.index}} of {{ansible_loop.length}})
+#    local_action:
+#        module: shell
+#        _raw_params: sudo tcpreplay -i {{ send_interface }} -p {{ interface_pps_limit }} -L {{num_packets_cic_monday}} {{generator_dir}}/Monday-WorkingHours-Fixed.pcap
+#        warn: false
+#    ignore_errors: yes
+#    register: sender
+    
+  - name: Generate Traffic. Run {{ansible_loop.index}} of {{ansible_loop.length}})
     local_action:
         module: shell
-        _raw_params: sudo tcpreplay -i {{ send_interface }} -p {{ interface_pps_limit }} -L {{num_packets}} {{generator_dir}}/Monday-WorkingHours-Fixed.pcap
+        _raw_params: sudo pkt-gen -i {{ send_interface }} -f tx -n {{ num_packets_30sec }} -R {{ interface_pps_limit }} -l {{ packet_size_max }} -l {{ packet_size_min }} -w 5 -zZ
         warn: false
-    ignore_errors: yes 
     register: sender
+    tags: generate
+    changed_when: false
+    async: 80
+    poll: 5
+    ignore_errors: yes    
+    
+    
 
 #<<workload end>>#
 
-  - name: Store Generator Stats
-    local_action:
-        module: shell
-        _raw_params: |
-            echo "{{interface_pps_limit}} --" >> "results/verbose/{{send_interface}}-to-{{inventory_hostname}}".log
-            echo "{{sender.stdout}}" | tail -2 >> "results/verbose/{{send_interface}}-to-{{inventory_hostname}}".log
-    ignore_errors: yes
+
 
   - debug:
         var: sender.stdout
@@ -54,8 +62,9 @@
       chdir: "{{ sensor_dir }}"
     become: yes
     ignore_errors: yes
+    retries: 30
     failed_when: false
-   
+
   - name: Wait for Results
     async_status: jid="{{ results_async.ansible_job_id }}"
     become: yes
@@ -71,7 +80,15 @@
       dest: "results/verbose/{{ inventory_hostname }}-{{capture_driver}}-tcpdump-results-run{{test_counter}}-verbose.csv"
       flat: yes
     changed_when: false
-
+    
+  - name: Store Generator Stats
+    local_action:
+        module: shell
+        _raw_params: |
+            echo "{{interface_pps_limit}} --" >> "results/verbose/{{send_interface}}-to-{{inventory_hostname}}".log
+            echo "{{sender.stdout}}" | tail -2 >> "results/verbose/{{send_interface}}-to-{{inventory_hostname}}".log
+    ignore_errors: yes
+    
   - name: Copy Totals
     fetch:
       src: "{{sensor_dir}}/{{ inventory_hostname }}-{{capture_driver}}-tcpdump-results.csv"

@@ -1,8 +1,8 @@
 #This playbook is the "outer" loop 
-- name: Reboot to Defaults. Begining Factor {{current_factor_list}} ({{ansible_loop.index}} of {{ansible_loop.length}})
+- name: Reboot to Defaults. Beginning Factor {{current_factor_list}} ({{ansible_loop.index}} of {{ansible_loop.length}})
   reboot:
   become: yes
-   tags: skippable
+  tags: skippable
 
 - name: Set Static Controls
   include_tasks: pcap-static-controls.yml
@@ -25,7 +25,7 @@
     loop_var: inner_counter
     index_var: inner_idx
 
-- name: End of Run ANOVA Test
+- name: End of Run Best Mean Test {{test_counter}}
   local_action:
     module: shell
     _raw_params: |
@@ -40,5 +40,8 @@
 - name: Update Last Loop Best
   set_fact:
    last_loop_best: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
+   significant_factors_array: "{{anova.stdout_lines[anova.stdout_lines|length -1].split(\",\")}}"
+   significant_factors_string: "{{anova.stdout_lines[anova.stdout_lines|length -1]}}"
+   significant_factors_history: "{{significant_factors_history}} + [ '{{anova.stdout_lines[anova.stdout_lines|length -1]}}' ]"                                                                                              
   when: "ansible_loop.revindex == 1 and test_counter > 1" 
 

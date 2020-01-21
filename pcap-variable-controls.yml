@@ -1,62 +1,54 @@
  ##FACTORS UNDER EXPERIMENT
 
   ###FACTOR A###
+- name: Reset libpcap Buffer Size Variable
+  set_fact:
+   libpcap_buffer_size: 2000 #the default
+
 - name: (Factor A) Set libpcap Buffer Size to {{libpcap_buffer|int*loop_multiplier|int}}
   set_fact:
       libpcap_buffer_size: "{{ libpcap_buffer|int * loop_multiplier|int }}" #Stored as KiB
   when: "'A' in current_factor_list"
-  
+
+  #libpcap uses a 32 bit (signed?) int
+  #https://github.com/the-tcpdump-group/libpcap/issues/651
+  #2048 MB = 2000000 KiB
+- name: (Factor A) Cap Oversized Buffer for Software
+  set_fact:
+      libpcap_buffer_size: "2000000"
+  when: "libpcap_buffer_size | int > 2000000"
+
   #Limit based on available
   #1000 MB = 976563 KiB
 - name: (Factor A) Cap Oversized Buffer for Hardware
   set_fact:
-      libpcap_buffer_size: "{{ 900 * ansible_facts['memory_mb']['nocache']['free']|int }}" 
-  when: "'libpcap_buffer_size' > {{ 977 * ansible_facts['memory_mb']['nocache']['free']|int }}"  
+      libpcap_buffer_size: "{{ 900 * ansible_facts['memory_mb']['nocache']['free']|int }}"
+  when: "libpcap_buffer_size | int >  977 * ansible_facts['memory_mb']['nocache']['free']|int"
 
-  #libpcap uses a 32 bit (signed?) int
-  #https://github.com/the-tcpdump-group/libpcap/issues/651  
-  #2048 MB = 2000000 KiB
-- name: (Factor A) Cap Oversized Buffer for Software
-  set_fact:
-      libpcap_buffer_size: "2000000" 
-  when: "'libpcap_buffer_size' > 2000000" 
+- debug:
+    var: "{{libpcap_buffer_size}}"
 
-- name: Record A Level
-  set_fact:
-   A_level: "{{A_level}} + [ '{{libpcap_buffer_size}}' ]"
-  when: "'A' in current_factor_list"
-  
   ###FACTOR B###
-- name: (Factor B) Set Kernel Max Backlog to {{backlog|int*loop_multiplier}}
-  shell: sysctl -w net.core.netdev_max_backlog={{backlog|int*loop_multiplier}}
+  ##Inherit initial value from interface test?
+- name: (Factor B) Set Socket Recieve Max Buffer Size to {{rmem_max|int*loop_multiplier|int}}
+  shell: sysctl -w net.core.rmem_max={{rmem_max|int*loop_multiplier|int}}
   become: yes
+  ignore_errors: yes
   when: "'B' in current_factor_list"
 
   ###FACTOR C###
-- name: (Factor C) Set Socket Recieve Max Buffer Size to {{rmem_max|int*loop_multiplier}}
-  shell: sysctl -w net.core.rmem_max={{rmem_max|int*loop_multiplier}}
+  ##Inherit initial value from interface test?
+- name: (Factor C) Set Backlog Loop Weight to {{backlog_weight|int*loop_multiplier|int}}
+  shell: sysctl -w net.core.dev_weight={{backlog_weight|int*loop_multiplier|int}}
   become: yes
   ignore_errors: yes
   when: "'C' in current_factor_list"
 
   ###FACTOR D###
-- name: (Factor D) Set Receive Flow Steering (RFS) Table Size to {{rfs_table|int*loop_multiplier}}
+- name: (Factor D) Set Receive Flow Steering (RFS) Table Size to {{rfs_table|int*loop_multiplier|int}}
   shell: |
-    sysctl -w net.core.rps_sock_flow_entries="{{ rfs_table|int*loop_multiplier }}"
-    echo "{{ rfs_flow_cnt|int*loop_multiplier }}" > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_flow_cnt
+    sysctl -w net.core.rps_sock_flow_entries="{{ rfs_table|int*loop_multiplier|int }}"
+    echo "{{ rfs_table|int*loop_multiplier|int }}" > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_flow_cnt
   become: yes
   ignore_errors: yes
   when: "'D' in current_factor_list"
-
-- name: Record D Level
-  set_fact:
-   D_level: "{{D_level}} + [ '{{rfs_table|int*loop_multiplier}}' ]"
-  when: "'D' in current_factor_list"
-
-  ###FACTOR E###
-- name: (Factor E) Set Backlog Loop Weight to {{backlog_weight|int*loop_multiplier}}
-  shell: sysctl -w net.core.dev_weight={{backlog_weight|int*loop_multiplier}}
-  become: yes
-  ignore_errors: yes
-  when: "'E' in current_factor_list"
-  

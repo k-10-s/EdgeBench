@@ -23,7 +23,6 @@
 - name: Disable Swap 
   shell: swapoff -a
   become: yes
-  #when: "'nvidia' not in group_names"
 
 - name: Bump RPi Throttling Temp (3B+ only)
   lineinfile:
@@ -32,7 +31,14 @@
     line: temp_soft_limit=70.0
   when: "'nvidia' not in group_names"
   become: yes
-
+  
+- name: Set MAXN Power Profile on NVIDIA Boards
+  shell: |
+    nvpmodel -m 0
+    jetson_clocks
+  become: yes
+  when: "'nvidia' in group_names"
+  
 - name: Disable Flow Control On Send Interface
   local_action:
       module: shell
@@ -54,16 +60,19 @@
   shell: sysctl -w net.core.netdev_tstamp_prequeue={{ rx_timestamp_status }}
   become: yes
 
-  #https://www.kernel.org/doc/Documentation/networking/scaling.txt
-  #Has some bugs. Probably a better way. Doesnt seem to apply much to ARM boards
-#- name: Determine CPU serving NIC Interrupts
-#  shell: cat /proc/interrupts | grep -oP "\d+:\s+\K(.+)(?={{capture_interface}})" | tr -s [:space:] "\n" | head -$(grep -c ^processor /proc/cpuinfo) | cat -n | sort -k2rn | head -1 | cut -b5-6
-#  register: irq_affinity
-#  changed_when: false
+#### VALUES INHERITED FROM PREVIOUS TESTS####
 
+  #Former Factor A from interface test
+- name: Increase NAPI Budget to {{NAPI_budget_best}} 
+  shell: sysctl -w net.core.netdev_budget={{NAPI_budget_best}}
+  become: yes
+
+  #Former Factor B from interface test
+- name:  Set Kernel Max Backlog to {{backlog_best}}
+  shell: sysctl -w net.core.netdev_max_backlog={{backlog_best}}
+  become: yes  
+
+  #Former Factor C from interface test
 - name: Enable / Set Receive Packet Steering Affinity with Mask {{ rps_mask }}
-  #shell: "echo {{ bitmasks[irq_affinity.stdout_lines|int] }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
-  #All the ARM boards tested so far use CPU0 for interrupts (the cpu that booted the kernel)
   shell: "echo {{ rps_mask }} > /sys/class/net/{{capture_interface}}/queues/rx-0/rps_cpus"
   become: yes
-  ignore_errors: yes
