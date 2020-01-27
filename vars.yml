@@ -12,10 +12,6 @@ factor_combos: [N,A,B,AB,C,AC,BC,ABC,
 #factor_combos: [N,A,B,AB,C,AC,BC,ABC,
 #                D,AD,BD,ABD,CD,ACD,BCD,ABCD]
 
-
-#factor_combos: [N,A]
-
-
 total_combinations: "{{2 ** total_factors }}" #2^k
 
 #replicates: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
@@ -67,7 +63,7 @@ suricata_runmode: workers
 
 #suricata max-pending-packets
 #default = 1024
-suricata_max_pending: 16384
+suricata_max_pending: 8096
 
 #suricata detect memory grouping aggressiveness
 #default = medium
@@ -78,14 +74,11 @@ suricata_detect_profile: high
 af_packet_mmap: 'yes'
 
 ###Static controls###
-#Rx Ring size small / large
-#default varies, or not supported
-#seemed to make it worse in all cases
-#rxring: [ min, max ]
 
 #RX_checksumming on/off
 #More research may be worthwhile here. It seemed to boost suricata when off?
-#lan78xx driver on rpi3 fails to read random traffic from pkt-gen when on. probably due to UDP header / payload mismatch
+#lan78xx driver on rpi3 fails to read random traffic from pkt-gen when on. 
+#probably due to UDP header / payload mismatch
 #default = on
 rx_checksum_status: 'off'
 

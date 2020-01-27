@@ -1,0 +1,16 @@
+  ###Blanket Optimizations (always apply to all)
+
+- name: Bump RPi Throttling Temp (3B+ only)
+  lineinfile:
+    path: /boot/config.txt
+    regex: "temp_soft_limit="
+    line: temp_soft_limit=70.0
+  when: "'nvidia' not in group_names"
+  become: yes
+
+- name: Set MAXN Power Profile on NVIDIA Boards
+  shell: |
+    nvpmodel -m 0
+    jetson_clocks
+  become: yes
+  when: "'nvidia' in group_names"

@@ -1,0 +1,35 @@
+ ##FACTORS UNDER EXPERIMENT
+
+  ###FACTOR A###
+- name: (Factor A) <%%%>
+  shell: <%%%>
+  become: yes
+  when: "'A' in current_factor_list"
+  
+  ###FACTOR B###
+- name: (Factor B) <%%%>
+  shell: <%%%>
+  become: yes
+  when: "'B' in current_factor_list"
+  
+  ###FACTOR C###
+- name: (Factor C) <%%%>
+  shell: <%%%>
+  become: yes
+  ignore_errors: yes
+  when: "'C' in current_factor_list"
+
+  ###FACTOR D###
+- name: (Factor D) <%%%>
+  shell: <%%%>
+  become: yes
+  ignore_errors: yes
+  when: "'D' in current_factor_list"
+
+  ###FACTOR E###
+- name: (Factor E) <%%%>
+  shell: <%%%>
+  become: yes
+  ignore_errors: yes
+  when: "'E' in current_factor_list"
+  

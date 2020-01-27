@@ -49,8 +49,8 @@ rule-files:
 #- generated.rules
  - suricata.rules
 
-classification-file: /etc/suricata/classification.config
-reference-config-file: /etc/suricata/reference.config
+classification-file: /sensor/classification.config
+reference-config-file: /sensor/reference.config
 threshold-file: /sensor/threshold.config
 
 
@@ -424,7 +424,7 @@ logging:
   # Defaults to empty (no filter).
   #
   # This value is overriden by the SC_LOG_OP_FILTER env var.
-  default-output-filter:
+  default-output-filter: 
 
   # Define your logging outputs.  If none are defined, or they are all
   # disabled you will get the default - console output.
@@ -434,7 +434,7 @@ logging:
       # type: json
   - file:
       enabled: yes
-      level: info
+      level: notice
       filename: /sensor/log/suricata.log
       # type: json
   - syslog:
@@ -568,7 +568,7 @@ pcap-file:
   #  - auto: suricata uses a statistical approach to detect when
   #  checksum off-loading is used. (default)
   # Warning: 'checksum-validation' must be set to yes to have checksum tested
-  checksum-checks: auto
+  checksum-checks: no
 
 # See "Advanced Capture Options" below for more options, including NETMAP
 # and PF_RING.
@@ -861,7 +861,7 @@ max-pending-packets: 1024
 # Runmode the engine should use. Please check --list-runmodes to get the available
 # runmodes for each packet acquisition method. Defaults to "autofp" (auto flow pinned
 # load balancing).
-#runmode: autofp
+runmode: autofp
 
 # Specifies the kind of flow load balancer used by the flow pinned autofp mode.
 #

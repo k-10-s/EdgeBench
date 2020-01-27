@@ -125,9 +125,12 @@ function captureLap {
 	if [ ${RXPPS[$LOOP_COUNT]} -lt "0" ]; then RXPPS[$LOOP_COUNT]=0; fi
 
 	#Specific to suricata...
+	#TX1 and rpi3 version of suricatasc have this in a different spot..
 	if [ "$PROCESS_NAME" == "Suricata-Main" ]; then
-		if [ "$DEVICE_FAM" == 'nvidia-tx1' ]; then
-			KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | awk '{ print $5 }'| egrep -o [0-9]+) #some sort of version mismatch...
+		if [ "$DEVICE_FAM" == 'nvidia-tx1' ]; then 
+			KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | awk '{ print $5 }'| egrep -o [0-9]+)
+		#elif [ "$NIC_DRIVER" == 'lan78xx' ]; then 
+		#	KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | awk '{ print $11 }'| egrep -o [0-9]+) 
 		else
 			KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | awk '{ print $7 }'| egrep -o [0-9]+)
 		fi
