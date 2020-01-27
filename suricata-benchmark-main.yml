@@ -52,11 +52,11 @@
 
 
     - name: Begin New Test
-      include_tasks: suricata-benchmark-recursive.yml
+      include_tasks: suricata-benchmark-outerloop.yml
 
     - name: Done Looping, Store Final Result
       set_fact:
-        suricata_pps_limit: "{{interface_pps_limit|int - target_to_beat|int}}"
+        suricata_pps_limit: "{{interface_pps_limit|int - ( target_to_beat|int / ( num_packets_cic_thursday|int / interface_pps_limit|int ) ) }}"
         suricata_runmode_best: "{{ A_levels[-1] }}"
         suricata_max_pending_best: "{{ B_levels[-1] }}"
         suricata_detect_profile_best: "{{ C_levels[-1] }}"

@@ -1,53 +1,109 @@
-#This playbook is the "outer" loop
-- name: Reboot to Defaults. Beginning Factor {{current_factor_list}} ({{ansible_loop.index}} of {{ansible_loop.length}})
-  reboot:
-  become: yes
-  tags: skippable
 
-- name: Re-base suricata.yml Configuration File
-  copy:
-    src: suricata-config-baseline.yml
-    dest: "{{sensor_dir}}/suricata.yml"
-    mode: '0777'
-
-- name: Set Static Controls
-  include_tasks: suricata-static-controls.yml
-
-- name: Set Variable Factor Controls
-  include_tasks: suricata-variable-controls.yml
-
-- name: Copy Performance Monitor
-  copy:
-    src: gather_stats.bash
-    dest: "{{sensor_dir}}/gather_stats.bash"
-    mode: '0755'
-
-  #-Run repeats
-- name: Begin Inner Loop
-  include_tasks: suricata-benchmark-innerloop.yml
-  loop: "{{ replicates }}"
+- name: Begin Initial Middle Loop
+  include_tasks: suricata-benchmark-middleloop.yml
+  loop: "{{ factor_combos }}" #This will run 2^(#factors) times
   loop_control:
-    extended: yes
-    loop_var: inner_counter
-    index_var: inner_idx
+   loop_var: current_factor_list
+   index_var: factor_idx
+   extended: yes
+  when: "test_counter == 1"
+  tags:
+    - discover
+    - initial
 
-- name: End of Run Best Mean Test {{test_counter}}
+- name: Run Initial ANOVA Test
   local_action:
     module: shell
     _raw_params: |
-        python best-mean.py 'results/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results-run{{test_counter}}.csv' kerndrop,sum "{{target_to_beat}}"
+        python anova.py 'results/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results-run1.csv' kerndrop,sum "{{total_factors}}" "{{replicates|length}}" 0.05 "{{ inventory_hostname }}"
   register: anova
   tags: anova
-  #if the last item in loop and not inital run
-  when: "ansible_loop.revindex == 1 and test_counter > 1"
-  changed_when: false
   ignore_errors: yes
+  changed_when: false
+  when: "test_counter == 1"
 
-- name: Update Last Loop Best
+- name: Set Initial Significant Factors
   set_fact:
-   last_loop_best: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
-   significant_factors_array: "{{anova.stdout_lines[anova.stdout_lines|length -1].split(\",\")}}"
-   significant_factors_string: "{{anova.stdout_lines[anova.stdout_lines|length -1]}}"
-   significant_factors_history: "{{significant_factors_history}} + [ '{{anova.stdout_lines[anova.stdout_lines|length -1]}}' ]"
-   last_loop_best_history: "{{last_loop_best_history}} + [ '{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}' ]"
-  when: "ansible_loop.revindex == 1 and test_counter > 1"
+     significant_factors_array: "{{anova.stdout_lines[anova.stdout_lines|length -1].split(\",\")}}"
+     significant_factors_string: "{{anova.stdout_lines[anova.stdout_lines|length -1]}}"
+     significant_factors_history: "{{significant_factors_history}} + [ '{{anova.stdout_lines[anova.stdout_lines|length -1]}}' ]"
+     target_to_beat: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
+     last_loop_best: "{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}"
+     last_loop_best_history: "{{last_loop_best_history}} + [ '{{anova.stdout_lines[anova.stdout_lines|length -3]|int}}' ]"
+  when: "test_counter == 1"
+
+- name: Record Significant A Level
+  set_fact:
+   A_levels: "{{A_levels}} + [ 'workers' ]"
+  when: "'A' in significant_factors_string"
+
+- name: Record Significant B Level #truncate if larger then 65556
+  set_fact:
+   B_levels: "{{B_levels}} + [ '{{suricata_max_pending|int*loop_multiplier|int}}' ]"
+  when: "'B' in significant_factors_string"
+
+- name: Record Significant C Level
+  set_fact:
+   C_levels: "{{C_levels}} + [ 'high' ]"
+  when: "'C' in significant_factors_string"
+
+- name: Record Significant D Level
+  set_fact:
+   D_levels: "{{D_levels}} + [ '{{rfs_table|int*loop_multiplier|int}}' ]"
+  when: "'D' in significant_factors_string"
+
+- name: Record Significant E Level
+  set_fact:
+   E_levels: "{{E_levels}} + [ 'yes' ]"
+  when: "'E' in significant_factors_string"
+
+- name: Increment Test Counter
+  set_fact:
+     test_counter: "{{ test_counter | int + 1 }}"
+
+- name: Increment Loop Multiplier
+  set_fact:
+     loop_multiplier: "{{ test_counter|int**test_counter|int }}"
+
+- name: Reset Results
+  shell: |
+      rm -rf {{ sensor_dir }}/*.csv
+      rm -rf {{ sensor_dir }}/*.pid
+      rm -rf {{ sensor_dir }}/log/*.log
+  args:
+      warn: false
+  become: yes
+
+- name: Target To beat
+  debug:
+      msg: "Last Loop best was {{last_loop_best}}. Needs to beat {{target_to_beat}}. On Loop {{ test_counter }}"
+
+- name: Increment Loop Multiplier
+  set_fact:     
+     loop_multiplier: "{{ test_counter|int**test_counter|int }}"
+
+- name: Begin Middle Loop {{test_counter}}
+  include_tasks: suricata-benchmark-middleloop.yml
+  loop: "{{significant_factors_array}}"
+  loop_control:
+    extended: yes
+    loop_var: current_factor_list
+    index_var: inner_index
+  when: "'NONE' not in significant_factors_array"
+
+- name: Check Last Loop Results
+  block:
+    - name: Check Recursive Base Case
+      fail:
+        msg: "Still room to improve {{last_loop_best}} < {{target_to_beat}}" #or have a target
+      when: "last_loop_best < target_to_beat"
+
+  rescue:
+    - name: Update Target to Beat
+      set_fact:
+         target_to_beat: "{{ last_loop_best }}"
+         loop_multiplier: "{{ test_counter|int**test_counter|int }}"
+
+    #Recursively call self to keep going
+    - name: Begin New Round
+      include_tasks: suricata-benchmark-recursive.yml

@@ -20,7 +20,7 @@
     changed_when: false
 
   - name: Launch Performance Monitor (Factors {{ current_factor_list }})
-    shell: "./gather_stats.bash {{ interface_pps_limit }} $(cat {{sensor_dir}}/suricata.pid) {{ capture_interface }} 1 {{ num_packets_cic_monday }} {{ current_factor_list }}"
+    shell: "./gather_stats.bash {{ interface_pps_limit }} $(cat {{sensor_dir}}/suricata.pid) {{ capture_interface }} 1 {{ num_packets_cic_thursday }} {{ current_factor_list }}"
     args:
       chdir: "{{ sensor_dir }}/"
     register: results_async
@@ -29,10 +29,10 @@
     become: yes
     changed_when: false
 
-  - name: Send Traffic via tcpreplay ({{ num_packets_cic_monday }} packets at varrying per second. Run {{ansible_loop.index}} of {{ansible_loop.length}})
+  - name: Send Traffic via tcpreplay ({{ num_packets_cic_thursday }} packets. Run {{ansible_loop.index}} of {{ansible_loop.length}})
     local_action:
         module: shell
-        _raw_params: sudo tcpreplay -i {{ send_interface }} -p {{ interface_pps_limit }} -L {{num_packets_cic_monday}} {{generator_dir}}/Monday-WorkingHours-Fixed.pcap
+        _raw_params: sudo tcpreplay -i {{ send_interface }} -p {{ interface_pps_limit }} -L {{num_packets_cic_thursday}} {{generator_dir}}/Thursday-WorkingHours-Fixed.pcap
         warn: false
     ignore_errors: yes
     register: sender
@@ -78,6 +78,7 @@
       dest: "results/verbose/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results-run{{test_counter}}-verbose.csv"
       flat: yes
     changed_when: false
+    tags: overwrite_results
 
   - name: Store Generator Stats
     local_action:
@@ -86,6 +87,7 @@
             echo "{{interface_pps_limit}} --" >> "results/verbose/{{send_interface}}-to-{{inventory_hostname}}".log
             echo "{{sender.stdout}}" | tail -2 >> "results/verbose/{{send_interface}}-to-{{inventory_hostname}}".log
     ignore_errors: yes
+    tags: overwrite_results
 
   - name: Copy Totals
     fetch:
@@ -93,6 +95,7 @@
       dest: "results/{{ inventory_hostname }}-{{capture_driver}}-Suricata-Main-results-run{{test_counter}}.csv"
       flat: yes
     changed_when: false
+    tags: overwrite_results
 
   - name: Display Running Results
     debug:

@@ -22,7 +22,7 @@
   #1000 MB = 976563 KiB
 - name: (Factor A) Cap Oversized Buffer for Hardware
   set_fact:
-      libpcap_buffer_size: "{{ 900 * ansible_facts['memory_mb']['nocache']['free']|int }}"
+      libpcap_buffer_size: "{{ 600 * ansible_facts['memory_mb']['nocache']['free']|int }}"
   when: "libpcap_buffer_size | int >  977 * ansible_facts['memory_mb']['nocache']['free']|int"
 
 - debug:

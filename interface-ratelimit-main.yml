@@ -38,7 +38,7 @@
       become: yes
 
     - name: Begin New Test
-      include_tasks: interface-ratelimit-recursive.yml
+      include_tasks: interface-ratelimit-outerloop.yml
 
     - name: Done Looping, Store Final Result Facts
       set_fact:

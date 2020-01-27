@@ -21,13 +21,6 @@
         cacheable: yes
       when: capture_driver is not defined
 
-#    - name: Inherit Previous Results
-#      set_fact:
-#        rmem_max: "{{rmem_best}}"
-#        NAPI_budget_best
-#        backlog_weight: "{{backlog_weight_best}}"
-#      when: rmem_max_best is defined and backlog_weight_best is defined
-
     - name: Record Initial Variable Levels
       set_fact:
         A_levels: "{{A_levels}} + [ '2000' ]"
@@ -45,7 +38,7 @@
       become: yes
 
     - name: Begin New Test
-      include_tasks: pcap-benchmark-recursive.yml
+      include_tasks: pcap-benchmark-outerloop.yml
 
     - name: Done Looping, Store Final Result Facts
       set_fact:

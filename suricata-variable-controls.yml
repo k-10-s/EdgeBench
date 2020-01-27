@@ -5,7 +5,7 @@
   lineinfile:
       path: "{{sensor_dir}}/suricata.yml"
       state: present
-      regexp: '^#runmode: '
+      regexp: 'runmode: autofp '
       line: "runmode: {{ suricata_runmode }}"
   when: "'A' in current_factor_list" 
    
@@ -22,7 +22,7 @@
   #Engine maximum
 - name: (Factor B) Cap Oversized Max Pending Packets
   set_fact:
-      suricata_max_pending_fact: "65534"
+      suricata_max_pending_fact: 65534
   when: "suricata_max_pending_fact | int > 65534"     
    
 - name: (Factor B) Set Max-Pending-Packets to {{ suricata_max_pending_fact }}
