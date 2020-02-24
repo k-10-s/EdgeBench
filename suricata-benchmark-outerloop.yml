@@ -106,4 +106,4 @@
 
     #Recursively call self to keep going
     - name: Begin New Round
-      include_tasks: suricata-benchmark-recursive.yml
+      include_tasks: suricata-benchmark-outerloop.yml

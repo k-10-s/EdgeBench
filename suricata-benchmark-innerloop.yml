@@ -1,13 +1,13 @@
 #This playbook is the "inner" loop
 
 #<<workload begin>>#
-  - name: Clean up possible stalled engines
+  - name: Clean up Stalled Engines
     shell: killall Suricata-Main; rm -rf "{{sensor_dir}}"/suricata.pid
     become: yes
-    #ignore_errors: yes
+    ignore_errors: yes
 
   - name: Begin Suricata
-    shell: LD_LIBRARY_PATH=/usr/lib /usr/bin/suricata -c "{{sensor_dir}}"/suricata.yml -i "{{capture_interface}}" --pidfile "{{sensor_dir}}"/suricata.pid
+    shell: LD_LIBRARY_PATH=/usr/lib /usr/bin/suricata -c {{sensor_dir}}/suricata.yml -i {{capture_interface}} --pidfile {{sensor_dir}}/suricata.pid
     register: suricata_async
     become: yes
     poll: 0
@@ -39,9 +39,6 @@
 
 #<<workload end>>#
 
-  - debug:
-        var: sender.stdout
-
   - name: Stop Everything
     shell: |
         killall Suricata-Main
@@ -62,7 +59,6 @@
     failed_when: false
     ignore_errors: yes
 
-
   - name: Wait for Results
     async_status: jid="{{ results_async.ansible_job_id }}"
     become: yes
@@ -71,6 +67,18 @@
     retries: 30
     failed_when: false
     ignore_errors: yes
+
+  - name: Generator Debug
+    debug:
+        var: sender.stdout
+
+  #- name: Suricata Debug
+  #  debug:
+  #      var: suricata
+
+  #- name: Gather Debug
+  #  debug:
+  #     var: results.stdout
 
   - name: Copy Verbose Results
     fetch:

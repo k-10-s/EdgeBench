@@ -8,7 +8,7 @@
   gather_facts: true
 
   tasks:
-    - name: Determine Capture suricata Driver
+    - name: Determine Capture Interface Driver
       shell: "ethtool -i {{capture_interface}} | awk 'NR == 1 {print $2}'"
       register: capture_interface_driver
       changed_when: false
@@ -38,13 +38,25 @@
           warn: false
       become: yes
 
-    - name: Re-base Suricata Ruleset
+    - name: Push Suricata Ruleset
       copy:
         src: suricata.rules
         dest: "{{sensor_dir}}/suricata.rules"
         mode: '0777'
 
-    - name: Re-base Suricata Threshold File
+    - name: Push Suricata Classifications
+      copy:
+        src: classification.config
+        dest: "{{sensor_dir}}/classification.config"
+        mode: '0777'    
+
+    - name: Push Suricata Reference
+      copy:
+        src: reference.config
+        dest: "{{sensor_dir}}/reference.config"
+        mode: '0777'
+
+    - name: Push Suricata Threshold File
       copy:
         src: threshold.config
         dest: "{{sensor_dir}}/threshold.config"

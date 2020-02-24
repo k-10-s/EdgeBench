@@ -9,6 +9,15 @@
     src: suricata-config-baseline.yml
     dest: "{{sensor_dir}}/suricata.yml"
     mode: '0777'
+  when: "'rpi3bp' not in inventory_hostname"
+    
+- name: Re-base suricata.yml Configuration File 3B Version
+  copy:
+    src: suricata-config-baseline-rpi3.yml
+    dest: "{{sensor_dir}}/suricata.yml"
+    mode: '0777'
+  when: "'rpi3bp' in inventory_hostname"    
+    
 
 - name: Set Static Controls
   include_tasks: suricata-static-controls.yml
