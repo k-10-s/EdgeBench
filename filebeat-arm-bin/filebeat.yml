@@ -222,4 +222,4 @@ filebeat.modules:
 - module: suricata
   eve:
     enabled: true
-    var.paths: ["/sensor/log/suricata.json"]
+    var.paths: ["/sensor/log/eve.json"]

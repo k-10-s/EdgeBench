@@ -207,7 +207,7 @@ num_effects = np.power(2,k)-1
 num_elements = num_effects+2
 sum_squares = np.ones(num_elements) #All effects plus error and total
 for i in range(num_effects):
-    sum_squares[i] = np.square(contrasts_all[i])/(n*np.power(2,k))
+	sum_squares[i] = np.square(contrasts_all[i])/(n*np.power(2,k))
 total_mean = np.mean(total)
 SST = np.sum(np.square(total - total_mean))
 SSE = SST - np.sum(sum_squares[0:num_effects])

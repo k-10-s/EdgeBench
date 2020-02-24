@@ -124,16 +124,9 @@ function captureLap {
 	if [ ${RXBPS[$LOOP_COUNT]} -lt "0" ]; then RXBPS[$LOOP_COUNT]=0; fi
 	if [ ${RXPPS[$LOOP_COUNT]} -lt "0" ]; then RXPPS[$LOOP_COUNT]=0; fi
 
-	#Specific to suricata...
-	#TX1 and rpi3 version of suricatasc have this in a different spot..
+	#Specific to Suricata
 	if [ "$PROCESS_NAME" == "Suricata-Main" ]; then
-		if [ "$DEVICE_FAM" == 'nvidia-tx1' ]; then 
-			KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | awk '{ print $5 }'| egrep -o [0-9]+)
-		#elif [ "$NIC_DRIVER" == 'lan78xx' ]; then 
-		#	KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | awk '{ print $11 }'| egrep -o [0-9]+) 
-		else
-			KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | awk '{ print $7 }'| egrep -o [0-9]+)
-		fi
+		KERN_DROP_NOW=$(suricatasc /var/run/suricata-command.socket -c "iface-stat $IFACE" | egrep -o '"drop": ([0-9]+)' | egrep -o [0-9]+)
 		KERN_DROPS[$LOOP_COUNT]=$(bc <<< "scale=0; ($KERN_DROP_NOW - $KERN_DROP_LAST) / $LOOP_TIME_REAL  ")
 		KERN_DROP_LAST=$KERN_DROP_NOW
 	else
