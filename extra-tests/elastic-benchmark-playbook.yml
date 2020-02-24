@@ -1,0 +1,199 @@
+- name: Elastic Sensor Benchmark Experiment
+  connection: ssh
+  hosts: all
+  vars_files: vars.yml
+  gather_facts: true
+
+  tasks:
+    - name: Determine Capture Interface Driver
+      shell: "ethtool -i {{capture_interface}} | awk 'NR == 1 {print $2}'"
+      register: capture_interface_driver
+      changed_when: false
+      become: yes
+      when: capture_driver is not defined
+
+    - name: Set Capture Driver Fact
+      set_fact:
+        capture_driver: "{{capture_interface_driver.stdout_lines[0]}}"
+        cacheable: yes
+      when: capture_driver is not defined
+
+    - name: Push Suricata Ruleset
+      copy:
+        src: suricata.rules
+        dest: "{{sensor_dir}}/suricata.rules"
+        mode: '0777'
+        
+    - name: Push Suricata Classifications
+      copy:
+        src: classification.config
+        dest: "{{sensor_dir}}/classification.config"
+        mode: '0777'    
+
+    - name: Push Suricata Reference
+      copy:
+        src: reference.config
+        dest: "{{sensor_dir}}/reference.config"
+        mode: '0777'
+
+    - name: Push Suricata Threshold File
+      copy:
+        src: threshold.config
+        dest: "{{sensor_dir}}/threshold.config"
+        mode: '0777'
+
+    - debug:
+        var: ansible_facts['architecture']
+
+    - name: Push Filebeat ARM64 Binary
+      copy:
+        src: "filebeat-arm-bin/filebeat-arm64"
+        dest: "{{sensor_dir}}/filebeat-arm"
+        mode: '0755'
+      when: ansible_facts['architecture'] == "aarch64"
+      
+    - name: Push Filebeat ARM32 Binary
+      copy:
+        src: "filebeat-arm-bin/filebeat-arm"
+        dest: "{{sensor_dir}}/filebeat-arm"
+        mode: '0755'
+      when: ansible_facts['architecture'] == "armv7l"      
+      
+    - name: Push Filebeat Config
+      copy:
+        src: "filebeat-arm-bin/filebeat.yml"
+        dest: "{{sensor_dir}}/filebeat.yml"
+        mode: '0755'
+
+    - name: Push Suricata Filebeat Module
+      copy:
+        src: "filebeat-arm-bin/suricata"
+        dest: "{{sensor_dir}}/module/"
+        mode: '0755'
+
+    - name: Reboot to Defaults
+      reboot:
+      become: yes
+      tags: reboot
+      
+    - name: Re-base suricata.yml Configuration File
+      copy:
+        src: suricata-config-baseline.yml
+        dest: "{{sensor_dir}}/suricata.yml"
+        mode: '0755'
+      tags: reset
+
+    - name: Set Static Controls
+      include_tasks: elastic-static-controls.yml
+      tags: reset
+
+    - name: Copy Performance Monitor
+      copy:
+        src: gather_stats.bash
+        dest: "{{sensor_dir}}/gather_stats.bash"
+        mode: '0755'
+
+    - name: Clean up Stalled Engines 
+      shell: killall Suricata-Main; rm -rf "{{sensor_dir}}"/suricata.pid
+      become: yes
+      ignore_errors: yes
+      
+    - name: Begin Filebeat
+      shell: "{{sensor_dir}}/filebeat-arm --path.logs log"
+      args:
+        chdir: "{{ sensor_dir }}/"
+      register: filebeat_async
+      poll: 0
+      async: 360      
+      tags: filebeat-start
+      
+    - name: Begin Suricata
+      shell: LD_LIBRARY_PATH=/usr/lib /usr/bin/suricata -c {{sensor_dir}}/suricata.yml -i {{capture_interface}} --pidfile {{sensor_dir}}/suricata.pid
+      register: suricata_async
+      become: yes
+      poll: 0
+      async: 360
+
+    - name: Wait for Warmup
+      command: /bin/sleep 30
+      async: 45
+      poll: 5
+      changed_when: false
+
+    - name: Launch Performance Monitor
+      shell: "./gather_stats.bash {{ suricata_pps_limit }} $(cat {{sensor_dir}}/suricata.pid) {{ capture_interface }} 1 {{ num_packets_cic_thursday }}"
+      args:
+        chdir: "{{ sensor_dir }}/"
+      register: results_async
+      poll: 0
+      async: 3600
+      become: yes
+      changed_when: false
+
+    - name: Send Traffic via tcpreplay ({{ num_packets_cic_thursday }} packets
+      local_action:
+          module: shell
+          _raw_params: sudo tcpreplay -i {{ send_interface }} -p {{ suricata_pps_limit }} -L {{num_packets_cic_thursday}} {{generator_dir}}/Thursday-WorkingHours-Fixed.pcap
+          warn: false
+      ignore_errors: yes
+      register: sender
+
+    #<<workload end>>#
+
+    - name: Stop Everything
+      shell: |
+          killall Suricata-Main
+          kill "$(cat gather.pid)"
+      args:
+        chdir: "{{ sensor_dir }}"
+      become: yes
+      ignore_errors: yes
+      retries: 30
+      failed_when: false
+
+    - name: Wait for Suricata Shutdown
+      async_status: jid="{{ suricata_async.ansible_job_id }}"
+      become: yes
+      register: suricata
+      until: suricata.finished
+      retries: 30
+      failed_when: false
+      ignore_errors: yes
+
+    - name: Wait for Results
+      async_status: jid="{{ results_async.ansible_job_id }}"
+      become: yes
+      register: results
+      until: results.finished
+      retries: 30
+      failed_when: false
+      ignore_errors: yes
+
+    - name: Generator Debug
+      debug:
+          var: sender.stdout
+          
+#    - name: Filebeat Debug
+#      debug:
+#         var: filebeat      
+
+  # - name: Suricata Debug
+  #   debug:
+  #     var: suricata
+
+  # - name: Gather Debug
+  #   debug:
+  #     var: results
+  
+    - name: Count Alerts
+      shell: wc -l /sensor/log/fast.log
+      register: alert_count
+    
+    - name: Display Running Results
+      debug:
+          var: results.stdout
+    
+    - name: Alerts Triggered on Sensor
+      debug:
+        var: alert_count.stdout  
+
