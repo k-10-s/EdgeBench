@@ -1,7 +1,7 @@
-Hunt Utilizing Specialized Hardware
+EdgeBench
 ====
 
-Ansible Playbooks to benchmark network sensor performance of embedded sized hardware
+Ansible Playbooks to optimize and benchmark edge devices / embedded sized hardware
 
 # Requirements:
 1. Generator machine with Ansible installed & ideally with a NIC that supports netmap native drivers
