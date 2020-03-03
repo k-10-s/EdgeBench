@@ -1,0 +1,15 @@
+rpi3bp PCAP Test Final
+- A levels: ['2000', '250000', '1000000']
+- B levels: ['212992']
+- C levels: ['64', '1200', '4800']
+- D levels: ['0', '32768']
+
+- libpcap Buffer (A): '1000000'
+- Socket queue mem (B): '212992'
+- Backlog poll weight (C): '4800'
+- RFS Table Size (D): '32768'
+
+- Number of Loops: '4'
+- Factor History: ['AC,A,CD,D', 'A,AC', NONE]
+- Loop Bests: []
+- PCAP PPS Limit: 45173.3

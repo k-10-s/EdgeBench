@@ -1,0 +1,20 @@
+tx2 Suricata Test Final
+- A levels: [autofp, workers, workers, workers]
+- B levels: ['1024', '8096', '32384', '218592']
+- C levels: [medium, high, high, high]
+- D levels: ['0', '32768', '131072', '884736']
+- E levels: ['no']
+
+- Runmode (A): workers
+...
+- Max Pending Packets (B): '218592'
+- Detect Profile (C): high
+...
+- RFS Table Size (D): '884736'
+- Memory Map Option (E): false
+...
+
+- Number of Loops: '4'
+- Factor History: ['ABCD,AB,AC,ACD,A', 'AB,ABCD', 'AB,ABCD', NONE]
+- Loop Bests: ['4435809', '4055161', '3640460', '3737923']
+- suricata PPS Limit: 112599.881743

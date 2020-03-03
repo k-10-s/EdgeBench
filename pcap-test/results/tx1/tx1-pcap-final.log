@@ -1,0 +1,15 @@
+tx1 PCAP Test Final
+- A levels: ['2000', '250000', '1000000', '6750000']
+- B levels: ['212992']
+- C levels: ['64']
+- D levels: ['0']
+
+- libpcap Buffer (A): '6750000'
+- Socket queue mem (B): '212992'
+- Backlog poll weight (C): '64'
+- RFS Table Size (D): '0'
+
+- Number of Loops: '4'
+- Factor History: [A, A, A, NONE]
+- Loop Bests: []
+- PCAP PPS Limit: 102000.0

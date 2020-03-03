@@ -1,20 +1,3 @@
 
-passwd.yml
 *.pcap
-test.yml
-testcontrol.yml
-loopcontrol.yml
-
-results/
-
-netstats.sh
-
-*.log
-
-*.csv
-
-*.sh
-
-*.png
-
 old/

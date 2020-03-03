@@ -1,0 +1,17 @@
+rpi4 Interface Test Final
+- A levels: ['300', '1200', '4800']
+- B levels: ['1000', '32768', '131072']
+- C levels: ['212922', '83886080', '335544320']
+- D levels: ['0']
+- E levels: ['64', '1200', '4800']
+
+- NAPI Budget (A): '4800'
+- Kernel Backlog (B): '131072'
+- Socket queue mem (C): '335544320'
+- RFS Table Size (D): '0'
+- Backlog poll weight (E): '4800'
+
+- Number of Loops: '3'
+- Factor History: ['ABC,C,A,ACE,CE,BCE,ABCE,BC,E', 'ABC,ABCE,C', NONE]
+- Loop Bests: ['27', '20', '28']
+- Interface PPS Limit: 159980

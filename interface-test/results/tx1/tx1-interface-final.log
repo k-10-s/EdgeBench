@@ -1,0 +1,17 @@
+tx1 Interface Test Final
+- A levels: ['300', '1200']
+- B levels: ['1000', '32768']
+- C levels: ['212922', '83886080']
+- D levels: ['0']
+- E levels: ['64']
+
+- NAPI Budget (A): '1200'
+- Kernel Backlog (B): '32768'
+- Socket queue mem (C): '83886080'
+- RFS Table Size (D): '0'
+- Backlog poll weight (E): '64'
+
+- Number of Loops: '2'
+- Factor History: ['A,AB,AC', NONE]
+- Loop Bests: ['50543', '52748']
+- Interface PPS Limit: 109457
