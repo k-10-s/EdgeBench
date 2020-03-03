@@ -1,0 +1,106 @@
+#Interface numbers like to jump around on reboot...
+all:
+  children:
+    sensors:
+        children:
+            rpi:
+                hosts:
+                    rpi3bp:
+                        send_interface: eth3
+                        capture_interface: eth0
+                        line_pps_limit: 160000
+
+                        #Facts inherited from previous tests
+                        interface_pps_limit: 70000
+                        rps_mask: 0 #0000 All made it worse
+                        NAPI_budget_best: 300
+                        backlog_best: 32768
+                        backlog_weight_best: 1200                        
+                        suricata_runmode_best: workers
+                        suricata_max_pending_best: 1024
+                        suricata_detect_profile_best: medium
+                        rfs_best: 32768
+
+                    rpi4:
+                        send_interface: eth8
+                        capture_interface: eth0
+                        line_pps_limit: 160000
+
+                        #Facts inherited from previous tests
+                        interface_pps_limit: 158000
+                        rps_mask: 0 #0000 All made it worse
+                        NAPI_budget_best: 1200
+                        backlog_best: 1000
+                        backlog_weight_best: 1200
+                        rfs_best: 32768
+                        suricata_runmode_best: workers
+                        suricata_max_pending_best: 1024
+                        suricata_detect_profile_best: medium
+                        suricata_pps_limit: 86000
+                vars:
+                    ansible_user: pi
+                    ansible_become_method: sudo
+                    sensor_dir: /sensor
+                    ansible_python_interpreter: /usr/bin/python
+
+            nvidia:
+                hosts:
+                    tx1:
+                        capture_interface: eth0
+                        send_interface: eth2
+                        line_pps_limit: 160000
+                        
+                        #Facts inherited from previous tests
+                        interface_pps_limit: 102000
+                        rps_mask: E #1110 (4 cpu total, CPU0 handling IRQ)
+                        rfs_best: 32768
+                        NAPI_budget_best: 1200
+                        backlog_best: 32768
+                        backlog_weight_best: 1200        
+                        suricata_runmode_best: workers
+                        suricata_max_pending_best: 60000
+                        suricata_detect_profile_best: medium
+                        suricata_pps_limit: 76000
+                                                
+                        
+                    tx2:
+                        capture_interface: eth1
+                        send_interface: eth6
+                        line_pps_limit: 160000
+
+                        #Facts inherited from previous tests
+                        interface_pps_limit: 148000
+                        rps_mask: 3E #0011 1110 (6 cpu total, CPU0 handling IRQ)
+                        rfs_best: 32768        
+                        NAPI_budget_best: 300
+                        backlog_best: 1000
+                        backlog_weight_best: 300
+                        suricata_runmode_best: workers
+                        suricata_max_pending_best: 32384
+                        suricata_detect_profile_best: medium                 
+                        suricata_pps_limit: 60000
+                    
+                    xavier:
+                        capture_interface: eth0
+                        send_interface: eth7
+                        line_pps_limit: 160000
+        
+                        #Facts inherited from previous tests
+                        interface_pps_limit: 159000
+                        rps_mask: FE #1111 1110 (8 cpu total) CPU0 handling IRQ
+                        rfs_best: 32768        
+                        NAPI_budget_best: 1200
+                        backlog_best: 1000
+                        backlog_weight_best: 300
+                        suricata_runmode_best: workers
+                        suricata_max_pending_best: 8096
+                        suricata_detect_profile_best: medium
+                        suricata_pps_limit: 85000                       
+                        
+                vars:
+                    ansible_user: kyle
+                    ansible_become_method: sudo
+                    sensor_dir: /sensor
+
+  vars:
+    generator_dir: /generator
