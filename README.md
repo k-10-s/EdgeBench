@@ -96,19 +96,19 @@ sensors:
 #### Generate some SSH keys if you don't have them already
 `ssh-keygen`
 
-#### If first time, run *prep-playbook.yml* to setup SSH keys and dependencies
+#### If first time, run *prep-playbook.yml* to setup SSH keys and dependencies. This should be the only time a password is needed. 
 `ansible-playbook -i inventory.yml --ask-pass --ask-become-pass  prep-playbook.yml`
 
 #### Run the *main* playbook once all placeholders have been filled and set:
-`ansible-playbook -i inventory.yml template-benchmark-playbook.yml`
+`ansible-playbook -i inventory.yml template-benchmark-main.yml`
 
 #### Intermediate and raw .csv results will be generated on each device and copied back to the current working directory
 
 #### At the end of all testing, a final log will be generated that details the best level of each factor and a final performance score. 
 
-![result_files][images/result_files.PNG]
+![result_files](images/result_files.PNG)
 
-#Tips and Tricks
+# Tips and Tricks
 
 #### Overriding variables from command line is done with -e:
 `ansible-playbook -i inventory.yml -e "pps_limit=104000" suricata-benchmark-main.yml`
@@ -140,8 +140,8 @@ sensors:
 ```
 
 # Example of previous results
-![result_files][images/Optimization.PNG]
+![result_files](images/Optimization.PNG)
 
 # High level Ansible Worklfow
-![result_files][images/MainWorkflow.PNG]
+![result_files](images/MainWorkflow.PNG)
 
