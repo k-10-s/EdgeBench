@@ -1,7 +1,8 @@
+#This playbook is the "outerloop"
 #Replace %%% with names of variables
 
 - name: Begin First Middle Loop
-  include_tasks: general-benchmark-middleloop.yml
+  include_tasks: template-benchmark-middleloop.yml
   loop: "{{ 5_factor_combos }}" #This will run 2^(#factors) times
   loop_control:
    loop_var: current_factor_list
@@ -78,7 +79,7 @@
      loop_multiplier: "{{ test_counter|int**test_counter|int }}"     
 
 - name: Continue Middle Loop
-  include_tasks: general-benchmark-middleloop.yml
+  include_tasks: template-benchmark-middleloop.yml
   loop: "{{significant_factors_array}}"
   loop_control:
     extended: yes
@@ -110,6 +111,6 @@
          
     #Recursively call self to keep going
     - name: Begin New Round
-      include_tasks: general-benchmark-outerloop.yml
+      include_tasks: template-benchmark-outerloop.yml
 
 

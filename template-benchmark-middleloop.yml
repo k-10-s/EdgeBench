@@ -10,10 +10,10 @@
   #add a playbook here to manually "revert" them
 
 - name: Set Static Controls
-  include_tasks: general-static-controls.yml
+  include_tasks: template-static-controls.yml
 
 - name: Set Variable Factor Controls
-  include_tasks: general-variable-controls.yml
+  include_tasks: template-variable-controls.yml
 
 - name: Copy Performance Monitor
   copy:
@@ -23,7 +23,7 @@
 
   #Run repeats
 - name: Begin Inner Loop
-  include_tasks: general-benchmark-innerloop.yml
+  include_tasks: template-benchmark-innerloop.yml
   loop: "{{ replicates }}"
   loop_control:
     extended: yes

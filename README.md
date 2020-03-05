@@ -4,7 +4,7 @@ Ansible playbooks to optimize and benchmark edge devices / embedded sized hardwa
 
 # Requirements:
 1. Control machine with Ansible installed
-2. A workload to test (see inventory for examples)
+2. A workload to test (see [**interface-test**](interface-test), [**pcap-test**](pcap-test), [**suricata-test**](suricata-test) for examples)
 4. Some edge devices to test it on (e.g. RPi4, NVIDIA XAVIER)
 3. (Optional) Optimization factors to attempt
 
@@ -61,9 +61,9 @@ sensors:
                     sensor_dir: /sensor
 ```
 
-#### Build [*vars.yml*](vars.yml), *static-controls.yml*, and *variable-controls.yml* playbooks with desired experiment variables. See fully implemented tests (interface, pcap, suricata) for examples
+#### Build [*vars.yml*](vars.yml), [*static-controls.yml*](template-static-controls.yml), and [*variable-controls.yml*](template-variable-controls.yml) playbooks with desired experiment variables. See fully implemented tests for examples
 
-#### Fill playbook *benchmark-innerloop.yml* with the workload to test and fill in placeholders (shown as \%\%\%\%). 
+#### Fill playbook [*template-benchmark-innerloop.yml*](template-benchmark-innerloop.yml) with the workload to test and fill in placeholders (shown as \%\%\%\%). 
 
 ```yaml
 #This playbook is the "inner" loop
@@ -81,7 +81,7 @@ sensors:
    #       SEE RATELIMIT TEST FOR EXAMPLE
 ```
 
-#### Replace placeholders in *benchmark-middleloop.yml*, *benchmark-outerloop.yml* and *benchmark-main.yml* with appropriate variable names.
+#### Replace placeholders in [*template-benchmark-middleloop.yml*](template-benchmark-middleloop.yml), [*template-benchmark-outerloop.yml*](template-benchmark-outerloop.yml) and [*template-benchmark-main.yml*](template-benchmark-main) with appropriate variable names.
 
 ```yaml
 - name: Record Initial Variable Levels
@@ -99,14 +99,14 @@ sensors:
 #### If first time, run *prep-playbook.yml* to setup SSH keys and dependencies
 `ansible-playbook -i inventory.yml --ask-pass --ask-become-pass  prep-playbook.yml`
 
-#### Run the main playbook once all placeholders have been filled and set:
-`ansible-playbook -i inventory.yml suricata-bench-playbook.yml`
+#### Run the *main* playbook once all placeholders have been filled and set:
+`ansible-playbook -i inventory.yml template-benchmark-playbook.yml`
 
 #### Intermediate and raw .csv results will be generated on each device and copied back to the current working directory
 
 #### At the end of all testing, a final log will be generated that details the best level of each factor and a final performance score. 
 
-![result_files][result_files.png]
+![result_files][images/result_files.PNG]
 
 #Tips and Tricks
 
@@ -139,4 +139,9 @@ sensors:
         var: sender.stdout
 ```
 
+# Example of previous results
+![result_files][images/Optimization.PNG]
+
+# High level Ansible Worklfow
+![result_files][images/MainWorkflow.PNG]
 
