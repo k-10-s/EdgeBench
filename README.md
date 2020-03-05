@@ -1,14 +1,30 @@
 EdgeBench
 ====
-
-Ansible Playbooks to optimize and benchmark edge devices / embedded sized hardware
+Ansible playbooks to optimize and benchmark edge devices / embedded sized hardware
 
 # Requirements:
-1. Generator machine with Ansible installed & ideally with a NIC that supports netmap native drivers
-2. Something to test against (see inventory for examples)
+1. Control machine with Ansible installed
+2. A workload to test (see inventory for examples)
+4. Some edge devices to test it on (e.g. RPi4, NVIDIA XAVIER)
+3. (Optional) Optimization factors to attempt
 
+# Fist Time Setup
 
-### Build inventory.yml with sensors specific variables
+#### Install OS and desired network configuration for edge devices
+
+#### Ensure hostname resolution works either via DNS or local hosts file. This is important, do not skip.
+
+```
+nano /etc/hosts...
+10.0.0.1        tx1
+10.0.0.2        tx2
+10.0.0.3        rpi3bp
+10.0.0.4        rpi4
+10.0.0.5        xavier
+10.10.10.60     maas-1
+10.10.10.61     maas-2
+```
+#### Build inventory.yml with device specific variables
 
 ```yaml
 sensors: 
@@ -33,54 +49,94 @@ sensors:
                         capture_interface: eth0
                         send_interface: eth3
                     tx2:
-                        capture_interface: eth1
-                        send_interface: eth6
-                    xavier:
                         capture_interface: eth0
-                        send_interface: eth4
+                        send_interface: eth3
+                        rps_mask: 3E #0011 1110
+                        NAPI_budget_best: 300
+                        backlog_best: 1000
+                        backlog_weight_best: 300
                 vars:
                     ansible_user: nvidia
                     ansible_become_method: sudo
                     sensor_dir: /sensor
-            traditional:
-                hosts:
-                    maas-1:
-                        capture_interface: eth1
-                    maas-2:
-                        capture_interface: eth1
-                vars:                
-                    ansible_user: maas-user
-                    ansible_become_method: sudo
-                    sensor_dir: /sensor
 ```
 
+#### Build [*vars.yml*](vars.yml), *static-controls.yml*, and *variable-controls.yml* playbooks with desired experiment variables. See fully implemented tests (interface, pcap, suricata) for examples
 
-### Add sensor IP addresses to your hosts file for name resolution, i.e. 
+#### Fill playbook *benchmark-innerloop.yml* with the workload to test and fill in placeholders (shown as \%\%\%\%). 
 
+```yaml
+#This playbook is the "inner" loop
+  - name: Launch Performance Monitor (Factors {{ current_factor_list }})
+    shell: "./gather_stats.bash <<%%%PID%%%>> <<%%%SAMPLE RATE%%%>> {{ current_factor_list }}"
+    args:
+      chdir: "{{ experiment_dir }}/"
+    register: results_async
+    poll: 0
+    async: 3600
+    become: yes
+    changed_when: false
+
+   # <<%%%YOUR WORKLOAD TASK(S) GOES HERE.....%%%>>
+   #       SEE RATELIMIT TEST FOR EXAMPLE
 ```
-nano /etc/hosts...
-10.0.0.1        tx1
-10.0.0.2        tx2
-10.0.0.3        rpi3bp
-10.0.0.4        rpi4
-10.0.0.5        xavier
-10.10.10.60     maas-1
-10.10.10.61     maas-2
-```
 
-### Generate some SSH keys if you don't have them already
+#### Replace placeholders in *benchmark-middleloop.yml*, *benchmark-outerloop.yml* and *benchmark-main.yml* with appropriate variable names.
+
+```yaml
+- name: Record Initial Variable Levels
+    set_fact:
+    A_levels: "{{A_levels}} + [ '%%%%%' ]"
+    B_levels: "{{B_levels}} + [ '%%%%%' ]"
+    C_levels: "{{C_levels}} + [ '%%%%%' ]"
+    D_levels: "{{D_levels}} + [ '%%%%%' ]"
+    E_levels: "{{E_levels}} + [ '%%%%%' ]"      
+```      
+
+#### Generate some SSH keys if you don't have them already
 `ssh-keygen`
 
-### First time connecting run the prep playbook to setup SSH keys and dependencies
+#### If first time, run *prep-playbook.yml* to setup SSH keys and dependencies
 `ansible-playbook -i inventory.yml --ask-pass --ask-become-pass  prep-playbook.yml`
 
-### Running playbooks:
+#### Run the main playbook once all placeholders have been filled and set:
 `ansible-playbook -i inventory.yml suricata-bench-playbook.yml`
 
-### Overriding variables from command line:
-`ansible-playbook -i inventory.yml -e "pps_limit=104000" suricata-bench-playbook.yml`
+#### Intermediate and raw .csv results will be generated on each device and copied back to the current working directory
 
-### Limiting to only certain hosts from inventory: 
-`ansible-playbook -i inventory.yml -l nvidia pcap-bench-playbook.yml`
+#### At the end of all testing, a final log will be generated that details the best level of each factor and a final performance score. 
+
+![result_files][result_files.png]
+
+#Tips and Tricks
+
+#### Overriding variables from command line is done with -e:
+`ansible-playbook -i inventory.yml -e "pps_limit=104000" suricata-benchmark-main.yml`
+
+#### Limiting to only certain hosts from inventory is done with -l: 
+`ansible-playbook -i inventory.yml -l nvidia,rpi4 pcap-bench-playbook.yml`
+
+#### Play only certain factors on certain devices:
+`ansible-playbook -i inventory.yml -l rpi4 -e '{"factor_combos": [E,AE,BE,ABE,CE,ACE,BCE,ABCE, DE,ADE,BDE,ABDE,CDE,ACDE,BCDE,ABCDE]}' suricata-benchmark-main.yml`
+
+#### Jump directly into the third iteration of a optimization loop
+`ansible-playbook -i inventory.yml -l rpi4 -e "test_counter=3" -e '{"significant_factors_array": [ABCE]}' -e "last_loop_best=3940539" -e "target_to_beat=5084844" suricata-benchmark-main.yml`
+
+#### Debug "play" is very useful and can grab stdout from each device:
+
+```yaml
+- name: Send Traffic via tcpreplay.
+    local_action:
+        module: shell
+        _raw_params: sudo tcpreplay -i {{send_interface}} -p {{interface_pps}} 1.pcap
+        warn: false
+    ignore_errors: yes
+    register: sender
+    
+    #Debug
+  - name: Generator Debug
+    debug:
+        var: sender.stdout
+```
 
 
