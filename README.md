@@ -104,9 +104,10 @@ sensors:
 
 #### Intermediate and raw .csv results will be generated on each device and copied back to the current working directory
 
+![result_files](images/result_files.PNG)
+
 #### At the end of all testing, a final log will be generated that details the best level of each factor and a final performance score. 
 
-![result_files](images/result_files.PNG)
 
 # Tips and Tricks
 
@@ -140,8 +141,8 @@ sensors:
 ```
 
 # Example of previous results
-![result_files](images/Optimization.PNG)
+![result_files](images/Optimization.png)
 
-# High level Ansible Worklfow
-![result_files](images/MainWorkflow.PNG)
+# High level Ansible workflow
+![result_files](images/MainWorkflow.png)
 
