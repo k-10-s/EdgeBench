@@ -1,3 +1,4 @@
+#Replace %%% with names of variables
 
 - name: Begin First Middle Loop
   include_tasks: general-benchmark-middleloop.yml
@@ -15,7 +16,7 @@
   local_action:
     module: shell
     _raw_params: |
-        python anova.py 'results/{{ inventory_hostname }}-results-run1.csv' <<**RESPONSE VARIABLE**>> "{{total_factors}}" "{{replicates|length}}" 0.05 {{ inventory_hostname }}
+        python anova.py 'results/{{ inventory_hostname }}-results-run1.csv' <<%%%RESPONSE VARIABLE%%%>> "{{total_factors}}" "{{replicates|length}}" 0.05 {{ inventory_hostname }}
   register: anova
   tags: anova
   ignore_errors: yes

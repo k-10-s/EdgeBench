@@ -1,6 +1,10 @@
 #This playbook acts as the "main" function
-#It has to be its own file since the "tasks:" keyword
-#can only appear once within all the loops
+#It has to be its own file since the "tasks:" keyword can only appear once 
+#within all the files
+
+#Replace %%% with names of variables
+
+
 - name: Generic Experiment Template
   connection: ssh
   hosts: all

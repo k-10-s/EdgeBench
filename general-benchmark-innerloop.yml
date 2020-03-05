@@ -1,6 +1,8 @@
 #This playbook is the "inner" loop
+ #Replace %%% with names or values of variables
+
   - name: Launch Performance Monitor (Factors {{ current_factor_list }})
-    shell: "./gather_stats.bash <<**PID**>> <<**SAMPLE RATE**>> {{ current_factor_list }}"
+    shell: "./gather_stats.bash <<%%PID%%>> <<%%%SAMPLE RATE%%%>> {{ current_factor_list }}"
     args:
       chdir: "{{ experiment_dir }}/"
     register: results_async
@@ -9,7 +11,7 @@
     become: yes
     changed_when: false
 
-   # <<**YOUR WORKLOAD TASK(S) GOES HERE.....**>>
+   # <<%%%YOUR WORKLOAD TASK(S) GOES HERE%%%>>
    #       SEE RATELIMIT TEST FOR EXAMPLE
 
   - name: Stop Everything

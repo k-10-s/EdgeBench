@@ -1,4 +1,6 @@
 #This playbook is the "middle" loop 
+#Replace %%% with names of variables
+
 - name: Reboot to Defaults. Beginning Factor {{current_factor_list}} ({{ansible_loop.index}} of {{ansible_loop.length}})
   reboot:
   become: yes
@@ -33,7 +35,7 @@
   local_action:
     module: shell
     _raw_params: |
-        python best-mean.py 'results/{{ inventory_hostname }}-results-run{{test_counter}}.csv' <<**RESPONSE VARIABLE**>> "{{target_to_beat}}"
+        python best-mean.py 'results/{{ inventory_hostname }}-results-run{{test_counter}}.csv' <<%%%RESPONSE VARIABLE%%%>> "{{target_to_beat}}"
   register: anova
   tags: anova
   #if the last item in loop and not inital run

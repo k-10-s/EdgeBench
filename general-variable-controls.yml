@@ -1,4 +1,5 @@
  ##FACTORS UNDER EXPERIMENT
+ #Replace %%% with names of variables
 
   ###FACTOR A###
 - name: (Factor A) <%%%>
